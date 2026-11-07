@@ -1,0 +1,78 @@
+// Better Auth models are generated into this file in Stage 2 (Better Auth CLI).
+// App models below are from ARCHITECTURE.md section 7.2.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CustomerAccount {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  accountNumber String  @unique // fake, e.g. "NM-" + 9 digits
+  portPin       String // fake demo value
+  autopay       Boolean @default(false)
+  lines         Line[]
+  bills         Bill[]
+}
+
+model Line {
+  id         String          @id @default(cuid())
+  accountId  String
+  account    CustomerAccount @relation(fields: [accountId], references: [id])
+  phone      String // fake 555 numbers only
+  nickname   String
+  plan       String // "Nimbus Unlimited", "Nimbus Essentials", ...
+  simIccid   String // fake
+  deviceName String
+  dataUsedGb Float           @default(0)
+}
+
+model Bill {
+  id        String          @id @default(cuid())
+  accountId String
+  account   CustomerAccount @relation(fields: [accountId], references: [id])
+  period    String
+  amount    Decimal         @db.Decimal(10, 2)
+  dueDate   DateTime
+  paid      Boolean         @default(false)
+}
+
+model BiometricProfile {
+  userId       String   @id
+  status       String // "none" | "enrolling" | "active"
+  windowCount  Int      @default(0)
+  modelVersion Int      @default(0)
+  updatedAt    DateTime @updatedAt
+}
+
+model SessionTrust {
+  sessionId    String    @id // Better Auth session id
+  userId       String
+  stepUpUntil  DateTime?
+  failedStepUp Int       @default(0)
+  updatedAt    DateTime  @updatedAt
+}
+
+model StepUpFactor {
+  userId String @id
+  secret String // demo only; fallback path
+}
+
+model RiskEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  sessionId String
+  type      String // "score" | "allow" | "step_up" | "deny" | "stepup_ok" | "stepup_failed"
+  tier      String?
+  risk      Float?
+  route     String?
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, createdAt])
+}
