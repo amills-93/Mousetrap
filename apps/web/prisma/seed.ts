@@ -10,15 +10,18 @@ import { symmetricEncrypt } from "better-auth/crypto";
 import qrcode from "qrcode-terminal";
 import { auth } from "../server/lib/auth";
 import { prisma } from "../server/lib/prisma";
+import { PLAN_NAMES, planFor } from "../server/lib/plans";
 
 const PASSWORD = "Password123!";
 const ISSUER = "Nimbus Mobile Demo";
-const PLANS = ["Nimbus Unlimited", "Nimbus Essentials", "Nimbus Basic"];
+const PLANS = PLAN_NAMES; // [Unlimited, Essentials, Basic]
 
 const USERS = [
   {
     email: "alex@nimbus.demo",
     name: "Alex Rivera",
+    address: { street: "1200 Cumulus Way", city: "Richardson", state: "TX", zip: "75080" },
+    authorizedUsers: [],
     lines: [
       { nickname: "Alex", plan: PLANS[0], deviceName: "Nimbus Phone 12", dataUsedGb: 18.4 },
       { nickname: "Tablet", plan: PLANS[1], deviceName: "Slate Tab 8", dataUsedGb: 3.1 },
@@ -27,6 +30,8 @@ const USERS = [
   {
     email: "jordan@nimbus.demo",
     name: "Jordan Lee",
+    address: { street: "48 Stratus Ct", city: "Plano", state: "TX", zip: "75024" },
+    authorizedUsers: [{ name: "Casey Lee", email: "casey@nimbus.demo" }],
     lines: [
       { nickname: "Jordan", plan: PLANS[0], deviceName: "Nimbus Phone 12 Pro", dataUsedGb: 27.9 },
       { nickname: "Casey", plan: PLANS[1], deviceName: "Nimbus Phone 11", dataUsedGb: 9.6 },
@@ -36,6 +41,8 @@ const USERS = [
   {
     email: "sam@nimbus.demo",
     name: "Sam Patel",
+    address: { street: "7 Nimbostratus Ln, Apt 3B", city: "Dallas", state: "TX", zip: "75201" },
+    authorizedUsers: [],
     lines: [
       { nickname: "Sam", plan: PLANS[1], deviceName: "Nimbus Phone 11", dataUsedGb: 12.0 },
       { nickname: "Work", plan: PLANS[0], deviceName: "Nimbus Phone 12", dataUsedGb: 22.5 },
@@ -44,8 +51,6 @@ const USERS = [
     ],
   },
 ];
-
-const PLAN_PRICE: Record<string, number> = { "Nimbus Unlimited": 70, "Nimbus Essentials": 50, "Nimbus Basic": 30 };
 
 // RFC 4648 base32, no padding (what authenticator apps expect in otpauth URIs).
 function base32(bytes: Uint8Array): string {
@@ -120,6 +125,8 @@ async function main() {
         accountNumber: `NM-${String(100200300 + n * 111).padStart(9, "0")}`,
         portPin: String(400000 + n * 1357).slice(0, 6),
         autopay: n === 2,
+        ...u.address,
+        authorizedUsers: { create: u.authorizedUsers },
         lines: {
           create: u.lines.map((l, j) => ({
             ...l,
@@ -130,7 +137,7 @@ async function main() {
       },
     });
 
-    const monthly = u.lines.reduce((sum, l) => sum + PLAN_PRICE[l.plan], 0);
+    const monthly = u.lines.reduce((sum, l) => sum + planFor(l.plan).price, 0);
     const now = new Date();
     await prisma.bill.createMany({
       data: Array.from({ length: 6 }, (_, k) => {

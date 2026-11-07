@@ -12,13 +12,29 @@ datasource db {
 }
 
 model CustomerAccount {
-  id            String  @id @default(cuid())
-  userId        String  @unique
-  accountNumber String  @unique // fake, e.g. "NM-" + 9 digits
-  portPin       String // fake demo value
-  autopay       Boolean @default(false)
-  lines         Line[]
-  bills         Bill[]
+  id              String           @id @default(cuid())
+  userId          String           @unique
+  accountNumber   String           @unique // fake, e.g. "NM-" + 9 digits
+  portPin         String // fake demo value
+  autopay         Boolean          @default(false)
+  // Profile address (Stage 3; not in 7.2). Fictional values only.
+  street          String           @default("")
+  city            String           @default("")
+  state           String           @default("")
+  zip             String           @default("")
+  lines           Line[]
+  bills           Bill[]
+  authorizedUsers AuthorizedUser[]
+}
+
+// Stage 3 addition: people allowed to manage the account (/security/authorized-users).
+model AuthorizedUser {
+  id        String          @id @default(cuid())
+  accountId String
+  account   CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  email     String
+  createdAt DateTime        @default(now())
 }
 
 model Line {
