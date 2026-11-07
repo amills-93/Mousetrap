@@ -27,6 +27,8 @@ Also: no real carrier branding, no real personal data (555 numbers, fake ICCIDs/
 - Full stack: `cp .env.example .env && docker compose up --build`
 - Web dev on host: `pnpm install && pnpm --filter web dev` (needs Postgres; `docker compose up postgres`)
 - Prisma: `pnpm --filter web prisma migrate dev` (host) — DATABASE_URL must point to `localhost:5432` when run outside Docker
+- Seed demo users (idempotent; prints TOTP QR codes): `docker compose run --rm seed`
+- Regenerate Better Auth models after changing plugins: `cd apps/web && npx auth@1.7.18 generate --config server/lib/auth.ts --output prisma/schema.prisma --yes`, then add a migration
 - ML health: `docker compose exec web wget -qO- http://ml:8000/healthz`
 
 ## Git workflow
