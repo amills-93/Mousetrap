@@ -46,6 +46,19 @@ services:
       ml:
         condition: service_healthy
 
+  # One-off: docker compose run --rm seed  (applies migrations, then seeds demo users and prints TOTP QR codes)
+  seed:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: build
+    env_file: .env
+    profiles: ["tools"]
+    command: sh -c "pnpm --filter web exec prisma migrate deploy && pnpm --filter web db:seed"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   mlmodels:
