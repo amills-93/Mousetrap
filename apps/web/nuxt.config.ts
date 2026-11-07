@@ -4,7 +4,8 @@ export default defineNuxtConfig({
   modules: ["@nuxtjs/tailwindcss"],
   css: ["~/assets/css/main.css"],
   runtimeConfig: {
-    // Server-only; overridden at runtime by NUXT_* or read directly from process.env in server/lib.
+    // Values here are build-time defaults. In Docker they are overridden at runtime by
+    // NUXT_ML_URL, NUXT_ML_INTERNAL_KEY, NUXT_PUBLIC_DEMO_MODE (mapped in docker-compose.yml).
     mlUrl: process.env.ML_URL || "http://localhost:8000",
     mlInternalKey: process.env.ML_INTERNAL_KEY || "",
     public: {
