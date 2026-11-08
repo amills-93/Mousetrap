@@ -96,8 +96,10 @@ Nuxt: requireTrust(event, "critical")
   -> policy decision
      allow    -> perform action
      step_up  -> 403 {action:"step_up", challengeId}
+     pause    -> create ScamHold, 403 {action:"pause", holdId, holdMs}   (7.5)
      deny     -> revoke session, 401 {action:"logout"} with no reason (the user is not told why)
 Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry original action
+         on pause show ScamPauseModal -> POST /api/holds/{holdId} {choice} -> action not performed
 ```
 
 ### 5.3 Step-up success
@@ -142,7 +144,9 @@ type CollectorEvent =
   | { k: "tm"; t: number; id: number; x: number; y: number; r: number; f: number }  // touchmove, throttled per touch
   | { k: "te"; t: number; id: number; x: number; y: number; r: number; f: number }  // touchend / touchcancel
   | { k: "fc"; t: number; role: string }                     // focus change: input role/type, never value
-  | { k: "nv"; t: number; route: string };                   // route change
+  | { k: "nv"; t: number; route: string }                    // route change
+  | { k: "ps"; t: number; role: string }                     // a paste happened: target role/type only, never the text
+  | { k: "vs"; t: number; hidden: boolean };                 // page hidden/shown or window blurred/focused
 
 interface TelemetryBatch {
   v: 1;
@@ -255,6 +259,18 @@ model SessionTrust {
   updatedAt    DateTime  @updatedAt
 }
 
+model ScamHold {                       // 7.5
+  id        String    @id @default(cuid())
+  userId    String
+  sessionId String
+  route     String
+  status    String    @default("pending") // pending | cancelled | held | used
+  reasons   String    @default("")         // coachingScore() reasons, "|"-separated (admin only)
+  releaseAt DateTime?
+  createdAt DateTime  @default(now())
+  @@index([userId, route])
+}
+
 model StepUpFactor {
   userId String @id
   secret String              // demo only; fallback path
@@ -327,6 +343,26 @@ Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, 
 Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`, any subset, e.g. `{"critical":{"stepUp":0.3}}`) for tuning during the demo; restart `web` to apply.
 
 On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login`: plain, with no message, after a risk deny; `?reason=stepup_failed` after 3 wrong codes. Re-learning an active profile (`POST /api/enroll/start`, the DevOverlay's "re-learn") is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
+
+### 7.5 Scam pause (coached customers)
+
+Many carrier scams end with the real owner making the change: a caller posing as support talks them through revealing a transfer PIN or moving their SIM. Step-up does not help, because the owner passes it. So a critical action that looks coached gets a warning and a hold instead.
+
+- **Signals.** ML's `coaching.py` counts these, all content-free, over the last 3 minutes: pastes into inputs (`ps`); leaving the page for 1.5 s or more and coming back (`vs`); silent pauses of 10 s or more; digits typed in spaced groups with 1.2–8 s gaps, as if read out. It also counts route changes this session. `/risk` returns the counts as `coaching`.
+- **Score.** `coachingScore()` in `policy.ts` is hand-set rules, since there is no data on coached users. It is unit-tested.
+
+  | Signal | Weight |
+  |---|---|
+  | tab switch | 0.3 each, up to 2 |
+  | paste | 0.3 |
+  | 2+ spaced digit groups | 0.25 |
+  | long pause | 0.15 |
+  | session < 5 min old with ≤ 2 route changes ("straight here after signing in") | 0.2 |
+
+  The score is capped at 1.
+- **Decision.** `decide()` returns `pause` for `critical` when the score is 0.5 or more. Deny still wins. Pause applies with or without a profile and even inside a step-up window, because the coached owner can pass step-up.
+- **Hold.** `requireTrust` creates a `ScamHold` (`pending`) and returns 403 `{action:"pause", holdId, holdMs}`. `ScamPauseModal` explains the scam, says Nimbus never asks for this, and offers two answers: "someone asked me to" (`cancelled`, logged `pause_reported`) or "I'm doing this myself" (`held` until `now + PAUSE_HOLD_MS`, 24 h by default, logged `pause_held`). The action is not performed either way. Once the hold has passed, that route skips the pause once (`used`).
+- **What the customer is told.** The modal names no signals, since a scammer on the call would learn what to avoid. The reasons go only to the demo overlay and `/admin/risk`.
 
 ## 8. ML service (services/ml)
 
@@ -419,6 +455,7 @@ BETTER_AUTH_URL=http://localhost:3000
 ML_URL=http://ml:8000
 ML_INTERNAL_KEY=...
 POLICY_THRESHOLDS_JSON=
+PAUSE_HOLD_MS=          # scam-pause hold (7.5); default 24 h, e.g. 60000 for the demo
 DEMO_MODE=true          # enables DevOverlay (risk meter + telemetry) and /admin/risk
 DOMAIN=localhost        # Caddy hostname (deploy profile)
 TRUST_PROXY=false       # true behind Caddy: client IP from X-Forwarded-For
@@ -475,4 +512,5 @@ LLM_API_KEY=
 3. Switch back to Alex's session; a teammate takes the keyboard and mouse; meter climbs.
 4. Teammate opens SIM swap: step-up TOTP modal appears.
 5. Teammate keeps pushing / fails TOTP: session revoked, back to login.
-6. Show `/admin/risk` timeline and the vanilla-adapter page to prove the front end is swappable.
+6. Coached owner: Alex, on the phone with a "Nimbus support" scammer, is told to move the line to a new SIM. Alex switches to the scam text and back, then types the ICCID as it is read out in groups. SIM swap shows the scam pause, and Alex taps "someone asked me to".
+7. Show the `/admin/risk` timeline (decisions, the pause and the report, coaching score with reasons) and the vanilla-adapter page to prove the front end is swappable.
