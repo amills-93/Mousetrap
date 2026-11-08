@@ -66,6 +66,24 @@ export function decide(input: TrustInput, tier: Tier, t: Thresholds = thresholds
   return "allow";
 }
 
+// Step-up typing challenge (ARCHITECTURE.md 5.3b). Mean keys risk of the phrase windows at or above this fails.
+export const TYPING_MAX_RISK = 0.5;
+
+export interface TypingResult {
+  keysModeled: boolean;
+  started: boolean;
+  windows: number;
+  risk: number | null;
+}
+
+// skip: nothing to judge (ML down, or no keystroke model): TOTP alone decides, as before.
+// retry: no phrase typing reached ML yet. fail: the typing does not look like the owner.
+export function judgeTyping(r: TypingResult | null, max = TYPING_MAX_RISK): "pass" | "skip" | "retry" | "fail" {
+  if (!r || !r.keysModeled) return "skip";
+  if (!r.started || r.windows === 0 || r.risk === null) return "retry";
+  return r.risk >= max ? "fail" : "pass";
+}
+
 export function decideAll(input: TrustInput, t: Thresholds = thresholds()): Record<Tier, Decision> {
   return Object.fromEntries(TIERS.map((tier) => [tier, decide(input, tier, t)])) as Record<Tier, Decision>;
 }

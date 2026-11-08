@@ -49,6 +49,19 @@ export const mlRisk = (sessionId: string) =>
 export const mlRiskClose = (userId: string, sessionId: string) =>
   ml<MlRisk>(`/risk/${encodeURIComponent(sessionId)}/close`, { method: "POST", body: { userId }, timeout: 300 });
 
+export interface MlChallenge {
+  keysModeled: boolean;
+  started: boolean;
+  windows: number;
+  risk: number | null;
+}
+
+// Step-up typing challenge: start when the prompt opens; result when the code is submitted.
+export const mlChallengeStart = (userId: string, sessionId: string) =>
+  ml<MlChallenge>(`/challenge/${encodeURIComponent(sessionId)}/start`, { method: "POST", body: { userId }, timeout: 1000 });
+export const mlChallengeResult = (userId: string, sessionId: string) =>
+  ml<MlChallenge>(`/challenge/${encodeURIComponent(sessionId)}/result`, { method: "POST", body: { userId }, timeout: 1000 });
+
 // After a successful step-up only (principle 5): ML adds the session's recent windows and retrains.
 export const mlFeedback = (body: { userId: string; sessionId: string; label: "genuine" }) =>
   ml<{ ok: boolean; windows: number }>("/feedback", { method: "POST", body });

@@ -84,7 +84,7 @@ model RiskEvent {
   id        String   @id @default(cuid())
   userId    String
   sessionId String
-  type      String // "score" | "allow" | "step_up" | "deny" | "stepup_ok" | "stepup_failed"
+  type      String // "score" | "allow" | "step_up" | "deny" | "stepup_ok" | "stepup_failed" | "typing_failed"
   tier      String?
   risk      Float?
   route     String?
