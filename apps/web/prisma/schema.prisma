@@ -80,6 +80,27 @@ model StepUpFactor {
   secret String // demo only; fallback path
 }
 
+// The customer's texts with their scam verdict (ARCHITECTURE.md 7.6). Synthetic in the demo; in a real deployment
+// classification would run on the phone and only the verdict (never the text) would reach the carrier.
+model Message {
+  id              String   @id @default(cuid())
+  userId          String
+  sender          String
+  body            String
+  receivedAt      DateTime
+  verdict         String // "scam" | "suspicious" | "ok"
+  scamProbability Float
+  category        String?
+  categoryLabel   String?
+  advice          String?
+  accountRisk     Boolean  @default(false) // a scam kind that ends in an account action
+  redFlags        String   @default("[]") // JSON [{id, label}]
+  customerVerdict String? // "reported" | "not_scam"
+  createdAt       DateTime @default(now())
+
+  @@index([userId, receivedAt])
+}
+
 // A critical action paused by the scam check (ARCHITECTURE.md 7.5). pending: warning shown; cancelled: the
 // customer said someone asked them to; held: they chose to wait until releaseAt; used: released and performed.
 model ScamHold {
