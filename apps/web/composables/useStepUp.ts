@@ -48,7 +48,7 @@ let flushTelemetry: (() => Promise<void>) | null = null;
 export const setTelemetryFlush = (fn: () => Promise<void>) => (flushTelemetry = fn);
 const FLUSH_WAIT_MS = 1000;
 
-const flushFirst = () =>
+export const flushFirst = () =>
   flushTelemetry ? Promise.race([flushTelemetry(), new Promise((r) => setTimeout(r, FLUSH_WAIT_MS))]) : undefined;
 
 export async function trustedFetch<T = unknown>(url: string, opts: FetchOptions = {}): Promise<T> {
