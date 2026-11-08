@@ -29,7 +29,7 @@ export interface BatchInfo {
 export interface Collector {
   start(): void;
   stop(): void;
-  flush(): void;
+  flush(): Promise<void>; // settles once this and every earlier in-flight batch has been answered
   setRoute(path: string): void;
   readonly running: boolean;
 }
@@ -89,6 +89,7 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
   const lastTouchMove = new Map<number, number>(); // touch id -> last tm time
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
+  const inflight = new Set<Promise<void>>();
 
   function push(e: CollectorEvent) {
     events.push(e);
@@ -123,19 +124,26 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
     return { body, info };
   }
 
-  function flush() {
+  function flush(): Promise<void> {
     const taken = takeBatch("fetch");
-    if (!taken) return;
+    if (taken) send(taken);
+    return Promise.all(inflight).then(() => {});
+  }
+
+  function send(taken: { body: string; info: BatchInfo }) {
     const started = performance.now();
     const done = (status: number, response?: Response) =>
       opts.onBatch?.({ ...taken.info, status, ms: Math.round(performance.now() - started), response });
-    fetch(endpoint, {
+    const p: Promise<void> = fetch(endpoint, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: taken.body,
       keepalive: true,
-    }).then((r) => done(r.status, r), () => done(0)); // best effort; the server treats missing telemetry as risk
+    })
+      .then((r) => done(r.status, r), () => done(0)) // best effort; the server treats missing telemetry as risk
+      .finally(() => inflight.delete(p));
+    inflight.add(p);
   }
 
   // pagehide: sendBeacon survives unload. text/plain keeps it a CORS-simple request.
