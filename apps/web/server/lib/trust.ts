@@ -41,8 +41,8 @@ export async function revokeSession(sessionId: string) {
   await prisma.sessionTrust.deleteMany({ where: { sessionId } });
 }
 
-// reason is a code; /login maps it to text (never echo free text from the URL).
-const logout = (reason: "risk" | "stepup_failed", message: string) =>
+// reason is a code; /login maps it to text (never echo free text from the URL). No reason: /login shows nothing.
+const logout = (reason?: "stepup_failed", message = "Unauthorized") =>
   createError({ statusCode: 401, statusMessage: message, data: { action: "logout", reason } });
 
 // Gate a sensitive route. Returns the session on allow; throws 403 {action:"step_up"} or 401 {action:"logout"}.
@@ -55,7 +55,7 @@ export async function requireTrust(event: H3Event, tier: Tier) {
 
   if (decision === "deny") {
     await revokeSession(session.id);
-    throw logout("risk", "Signed out: this session no longer looks like the account owner.");
+    throw logout(); // silent on purpose: an impostor learns nothing about why they were signed out
   }
   if (decision === "step_up") {
     throw createError({
