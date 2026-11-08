@@ -46,6 +46,7 @@ export default defineNuxtPlugin(() => {
     ...(useRuntimeConfig().public.demoMode ? debugHooks(debug) : {}),
   });
   trackRoutes(collector, router);
+  setTelemetryFlush(() => (collector.running ? collector.flush() : Promise.resolve()));
 
   watch(
     () => [session.value.data?.session.id, router.currentRoute.value.path] as const,

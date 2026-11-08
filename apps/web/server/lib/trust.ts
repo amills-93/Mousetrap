@@ -2,7 +2,7 @@
 // decision as a RiskEvent, revokes the session on deny, and tracks step-up state in SessionTrust.
 import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
-import { mlFeedback, mlRisk, type MlRisk } from "./ml";
+import { mlFeedback, mlRisk, mlRiskClose, type MlRisk } from "./ml";
 import { MIN_WINDOWS, decide, type Decision, type Tier, type TrustInput } from "./policy";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
@@ -10,9 +10,10 @@ import { requireSession } from "./session";
 export const STEP_UP_TTL_MS = 60 * 1000; // short on purpose: long enough to retry the action, not to browse on
 export const MAX_STEP_UP_FAILURES = 3;
 
-export async function loadTrust(userId: string, sessionId: string): Promise<{ input: TrustInput; ml: MlRisk | null }> {
+// closeWindow: have ML score the open window first (gated actions only; the overlay's polling must not).
+export async function loadTrust(userId: string, sessionId: string, closeWindow = false): Promise<{ input: TrustInput; ml: MlRisk | null }> {
   const [ml, profile, trust] = await Promise.all([
-    mlRisk(sessionId).catch(() => null),
+    (closeWindow ? mlRiskClose(userId, sessionId) : mlRisk(sessionId)).catch(() => null),
     prisma.biometricProfile.findUnique({ where: { userId } }),
     prisma.sessionTrust.findUnique({ where: { sessionId } }),
   ]);
@@ -49,7 +50,7 @@ const logout = (reason?: "stepup_failed", message = "Unauthorized") =>
 export async function requireTrust(event: H3Event, tier: Tier) {
   const auth = await requireSession(event);
   const { user, session } = auth;
-  const { input } = await loadTrust(user.id, session.id);
+  const { input } = await loadTrust(user.id, session.id, true);
   const decision = decide(input, tier);
   await logRiskEvent({ userId: user.id, sessionId: session.id, type: decision, tier, risk: input.risk, route: event.path });
 
