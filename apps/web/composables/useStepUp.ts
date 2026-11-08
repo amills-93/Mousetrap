@@ -35,7 +35,7 @@ export class StepUpCancelled extends Error {
   }
 }
 
-const actionOf = (e: any): { action?: string; tier?: string; reason?: string } => e?.data?.data ?? {};
+const actionOf = (e: any): { action?: string; tier?: string; reason?: string; holdId?: string; holdMs?: number } => e?.data?.data ?? {};
 
 export function signedOut(reason?: string) {
   const q = reason ? `?reason=${encodeURIComponent(reason)}` : "";
@@ -57,7 +57,9 @@ export async function trustedFetch<T = unknown>(url: string, opts: FetchOptions 
       await flushFirst();
       return (await rawFetch(url, opts)) as T;
     } catch (e) {
-      const { action, tier, reason } = actionOf(e);
+      const data = actionOf(e);
+      const { action, tier, reason } = data;
+      if (action === "pause") return handlePause(data); // scam check: warning + hold (useScamPause.ts)
       if (action === "logout") {
         signedOut(reason);
         throw e;

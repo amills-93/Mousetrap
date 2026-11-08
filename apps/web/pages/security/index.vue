@@ -24,7 +24,8 @@ async function revealPin() {
     clearTimeout(pinTimer);
     pinTimer = setTimeout(() => (pin.value = null), 30_000);
   } catch (e: any) {
-    pinErr.value = e instanceof StepUpCancelled ? "Verification cancelled." : e?.data?.statusMessage || "Could not reveal PIN";
+    pinErr.value =
+      e instanceof StepUpCancelled ? "Verification cancelled." : e instanceof ActionPaused ? e.message : e?.data?.statusMessage || "Could not reveal PIN";
   }
 }
 onBeforeUnmount(() => clearTimeout(pinTimer));
