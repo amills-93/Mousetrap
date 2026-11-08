@@ -54,21 +54,16 @@ async function submit() {
 </script>
 
 <template>
-  <div v-if="state.open" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" @keydown.esc="finishStepUp(false)">
-    <form
-      class="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="stepup-title"
-      @submit.prevent="submit"
-    >
-      <h2 id="stepup-title" class="text-lg font-semibold text-nimbus">Confirm it's you</h2>
-      <p class="mt-1 text-sm text-gray-600">
-        This action needs an extra check. Type the phrase below, then enter the 6-digit code from your authenticator app.
+  <div v-if="state.open" class="scrim" @keydown.esc="finishStepUp(false)">
+    <form class="dialog max-w-md p-7 sm:p-8" role="dialog" aria-modal="true" aria-labelledby="stepup-title" @submit.prevent="submit">
+      <span class="grid h-12 w-12 place-items-center rounded-2xl bg-nimbus-50 text-nimbus"><Icon name="lock" :size="24" /></span>
+      <h2 id="stepup-title" class="mt-5 text-2xl font-semibold">Confirm it's you</h2>
+      <p class="mt-1.5 text-sm leading-relaxed text-ink-muted">
+        This change needs an extra check. Type the phrase below, then enter the 6-digit code from your authenticator app.
       </p>
-      <label class="mt-4 block text-sm text-gray-700" for="stepup-phrase">
-        Type: <span class="font-medium text-gray-900">{{ phrase }}</span>
-      </label>
+
+      <p class="mt-5 rounded-xl bg-ink-wash px-4 py-3 text-[15px] font-medium" aria-hidden="true">{{ phrase }}</p>
+      <label class="label mt-4" for="stepup-phrase">Type the phrase<span class="sr-only">: {{ phrase }}</span></label>
       <input
         id="stepup-phrase"
         ref="phraseInput"
@@ -76,25 +71,30 @@ async function submit() {
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
-        class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-nimbus focus:outline-none focus:ring-2 focus:ring-nimbus-accent"
+        class="input"
+        :class="phraseDone ? '!border-emerald-500' : ''"
         @paste.prevent
         @drop.prevent
         @keydown.enter.prevent="input?.focus()"
       />
+
+      <label class="label mt-4" for="stepup-code">6-digit code</label>
       <input
+        id="stepup-code"
         ref="input"
         v-model="code"
         inputmode="numeric"
         autocomplete="one-time-code"
         maxlength="6"
         pattern="\d{6}"
-        placeholder="123456"
-        class="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-center text-xl tracking-[0.4em] focus:border-nimbus focus:outline-none focus:ring-2 focus:ring-nimbus-accent"
+        placeholder="000000"
+        class="input text-center font-display text-2xl tracking-[0.5em]"
       />
-      <p v-if="error" class="mt-2 text-sm text-red-600" role="alert">{{ error }}</p>
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100" @click="finishStepUp(false)">Cancel</button>
-        <button type="submit" :disabled="busy || !phraseDone || code.trim().length !== 6" class="rounded-lg bg-nimbus px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+      <p v-if="error" class="notice-err mt-4" role="alert"><Icon name="alert" :size="18" class="mt-px" />{{ error }}</p>
+
+      <div class="mt-7 flex justify-end gap-2">
+        <button type="button" class="btn-ghost" @click="finishStepUp(false)">Cancel</button>
+        <button type="submit" :disabled="busy || !phraseDone || code.trim().length !== 6" class="btn-primary min-w-[7rem]">
           {{ busy ? "Verifying…" : "Verify" }}
         </button>
       </div>
