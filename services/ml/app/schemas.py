@@ -85,4 +85,21 @@ class IngestRequest(BaseModel):
 
 class IngestResponse(BaseModel):
     ok: bool
-    buffered: int
+    buffered: int  # raw events held for this session
+    windows: int  # windows completed by this batch
+    enrollWindows: int | None = None  # enrollment progress, when the user is enrolling
+
+
+class EnrollFinishResponse(BaseModel):
+    ok: bool
+    windowCount: int
+    modelVersion: int | None = None
+    error: str | None = None
+
+
+class UserStatus(BaseModel):
+    enrolled: bool
+    enrolling: bool
+    enrollWindows: int  # windows collected in the current enrollment
+    windowCount: int  # windows the current model was trained on
+    modelVersion: int
