@@ -1,2 +1,2 @@
-// Collector core, schema, and adapters are implemented in Stage 4 (ARCHITECTURE.md section 6).
-export * from "./schema";
+export * from "./schema.js";
+export { createCollector, keyClass, codeHash, type Collector, type CollectorOptions } from "./core.js";

@@ -6,13 +6,15 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./vue": "./dist/adapters/vue.js",
-    "./vanilla": "./dist/adapters/vanilla.js"
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./vue": { "types": "./dist/adapters/vue.d.ts", "default": "./dist/adapters/vue.js" },
+    "./vanilla": { "types": "./dist/adapters/vanilla.d.ts", "default": "./dist/adapters/vanilla.js" }
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "prepare": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "typescript": "5.9.3"
