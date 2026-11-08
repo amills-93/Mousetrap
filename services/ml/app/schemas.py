@@ -103,3 +103,11 @@ class UserStatus(BaseModel):
     enrollWindows: int  # windows collected in the current enrollment
     windowCount: int  # windows the current model was trained on
     modelVersion: int
+
+
+class RiskResponse(BaseModel):
+    risk: float  # session EWMA in [0, 1]
+    windows: int  # windows scored this session
+    lastUpdated: float | None  # unix seconds of the last scored window
+    components: dict[str, float]  # per-modality EWMA: keys, mouse, touch (only those seen)
+    bot: float = 0.0  # bot-heuristic penalty on the last window
