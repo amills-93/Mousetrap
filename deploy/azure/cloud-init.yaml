@@ -1,0 +1,11 @@
+#cloud-config
+# First boot of the Azure demo VM: Docker + compose plugin, then a checkout of the repo at /opt/mousetrap.
+# deploy/azure/provision.sh runs deploy/deploy.sh afterwards; GitHub Actions redeploys on every push to main.
+package_update: true
+packages:
+  - git
+  - curl
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  - git clone https://github.com/amills-93/Mousetrap.git /opt/mousetrap
