@@ -4,7 +4,7 @@ from collections import Counter
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
-from . import buffer, enrollment, features, model, scoring
+from . import buffer, coaching, enrollment, features, model, scoring
 from .schemas import (
     ChallengeResponse, CloseRequest, EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse,
     UserStatus,
@@ -43,6 +43,7 @@ def healthz() -> dict:
 def ingest(req: IngestRequest) -> IngestResponse:
     user_id = valid_user(req.userId)
     buf, windows = buffer.append(user_id, req.sessionId, req.batch)
+    coaching.observe(user_id, req.sessionId, req.batch.pageId, req.batch.events)
     rows = [features.extract(w) for w in windows]
 
     enroll_windows = None
@@ -182,14 +183,16 @@ def challenge_result(session_id: str, req: CloseRequest) -> ChallengeResponse:
 
 def _risk_response(session_id: str) -> RiskResponse:
     st = scoring.get(session_id)
+    signals = coaching.signals(session_id)  # needs no profile, so reported even when nothing is scored
     if st is None:
-        return RiskResponse(risk=0.0, windows=0, lastUpdated=None, components={})
+        return RiskResponse(risk=0.0, windows=0, lastUpdated=None, components={}, coaching=signals)
     return RiskResponse(
         risk=round(st.risk, 4),
         windows=st.windows,
         lastUpdated=st.last_updated,
         components={k: round(v, 4) for k, v in st.components.items()},
         bot=round(st.bot, 2),
+        coaching=signals,
     )
 
 

@@ -37,7 +37,8 @@ def impostor_mouse(t):
 
 def test_unknown_session_has_no_windows(client):
     assert client.get("/risk/nope", headers=H).json() == {
-        "risk": 0.0, "windows": 0, "lastUpdated": None, "components": {}, "bot": 0.0}
+        "risk": 0.0, "windows": 0, "lastUpdated": None, "components": {}, "bot": 0.0,
+        "coaching": {"pastes": 0, "tabSwitches": 0, "longPauses": 0, "chunkedDigits": 0, "navs": 0}}
 
 
 def test_requires_key(client):
