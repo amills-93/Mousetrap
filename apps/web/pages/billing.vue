@@ -16,46 +16,56 @@ const toggleAutopay = () => run("/api/account/billing/autopay", { enabled: !data
 </script>
 
 <template>
-  <div v-if="data" class="space-y-6">
-    <h1 class="text-2xl font-semibold text-nimbus">Billing</h1>
+  <div v-if="data" class="space-y-5">
+    <PageHeader title="Billing" subtitle="Pay your bill, manage autopay and see past statements." />
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      <Card title="Balance due">
-        <p class="text-3xl font-semibold">{{ money(data.balanceDue) }}</p>
-      </Card>
-      <Card title="Autopay">
-        <div class="flex items-center justify-between">
-          <p class="text-sm text-gray-600">Pay your bill automatically on the due date.</p>
+    <div class="grid gap-5 md:grid-cols-2">
+      <section class="card-hero">
+        <p class="text-[13px] font-medium text-nimbus-300">Balance due</p>
+        <p class="mt-3 font-display text-5xl font-semibold tracking-tight tabular-nums">{{ money(data.balanceDue) }}</p>
+      </section>
+      <Card title="Autopay" subtitle="Pay your bill automatically on the due date.">
+        <template #action>
           <button
             role="switch"
             :aria-checked="data.account.autopay"
+            aria-label="Autopay"
             :disabled="busy"
-            class="relative h-6 w-11 shrink-0 rounded-full transition"
-            :class="data.account.autopay ? 'bg-nimbus' : 'bg-gray-300'"
+            class="relative h-7 w-12 shrink-0 rounded-full transition disabled:opacity-50"
+            :class="data.account.autopay ? 'bg-nimbus' : 'bg-nimbus-200'"
             @click="toggleAutopay"
           >
-            <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition" :class="data.account.autopay ? 'left-[22px]' : 'left-0.5'" />
+            <span class="absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all" :class="data.account.autopay ? 'left-6' : 'left-1'" />
           </button>
-        </div>
+        </template>
+        <p class="flex items-center gap-2 text-sm" :class="data.account.autopay ? 'text-emerald-700' : 'text-ink-muted'">
+          <span class="h-2 w-2 rounded-full" :class="data.account.autopay ? 'bg-emerald-500' : 'bg-nimbus-300'" />
+          {{ data.account.autopay ? "On" : "Off" }}
+        </p>
       </Card>
     </div>
 
-    <p v-if="msg" class="text-sm" :class="msg.ok ? 'text-green-700' : 'text-red-600'">{{ msg.text }}</p>
+    <Notice :msg="msg" />
 
     <Card title="Bill history">
-      <div class="overflow-x-auto">
+      <div class="-mx-6 overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="text-left text-gray-500">
-            <tr><th class="py-2 font-normal">Period</th><th class="font-normal">Due</th><th class="font-normal text-right">Amount</th><th class="font-normal text-right">Status</th></tr>
+          <thead class="text-left text-xs uppercase tracking-wider text-ink-muted">
+            <tr class="border-b border-ink-line">
+              <th class="px-6 py-2.5 font-medium">Period</th>
+              <th class="px-3 py-2.5 font-medium">Due</th>
+              <th class="px-3 py-2.5 text-right font-medium">Amount</th>
+              <th class="px-6 py-2.5 text-right font-medium">Status</th>
+            </tr>
           </thead>
-          <tbody class="divide-y">
-            <tr v-for="b in data.bills" :key="b.id">
-              <td class="py-3">{{ b.period }}</td>
-              <td>{{ shortDate(b.dueDate) }}</td>
-              <td class="text-right">{{ money(b.amount) }}</td>
-              <td class="text-right">
-                <span v-if="b.paid" class="text-green-700">Paid</span>
-                <button v-else :disabled="busy" class="rounded bg-nimbus text-white px-3 py-1 text-xs font-medium disabled:opacity-50" @click="pay(b.id)">Pay {{ money(b.amount) }}</button>
+          <tbody class="divide-y divide-ink-line">
+            <tr v-for="b in data.bills" :key="b.id" class="transition hover:bg-ink-wash/60">
+              <td class="whitespace-nowrap px-6 py-3.5 font-medium">{{ b.period }}</td>
+              <td class="whitespace-nowrap px-3 text-ink-muted">{{ shortDate(b.dueDate) }}</td>
+              <td class="px-3 text-right tabular-nums">{{ money(b.amount) }}</td>
+              <td class="px-6 text-right">
+                <span v-if="b.paid" class="badge bg-emerald-50 text-emerald-700"><Icon name="check" :size="14" />Paid</span>
+                <button v-else :disabled="busy" class="btn-primary !px-3 !py-1.5 text-xs" @click="pay(b.id)">Pay {{ money(b.amount) }}</button>
               </td>
             </tr>
           </tbody>

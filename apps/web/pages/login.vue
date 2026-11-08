@@ -47,44 +47,68 @@ async function submitTotp() {
 </script>
 
 <template>
-  <main class="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-    <div class="bg-white rounded-xl shadow p-8 max-w-sm w-full">
-      <h1 class="text-2xl font-semibold text-nimbus">Nimbus Mobile</h1>
-      <p v-if="signedOutReason" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ signedOutReason }}</p>
-      <p v-if="session && step === 'password'" class="text-sm text-gray-500 mt-1">
-        Signed in as {{ session.user.email }}. Sign in below to add another account.
-        <NuxtLink to="/" class="text-nimbus underline">Back to portal</NuxtLink>
-      </p>
-      <p v-else class="text-sm text-gray-500 mt-1">
-        {{ step === "password" ? "Sign in to your account" : "Enter the 6-digit code from your authenticator app" }}
-      </p>
+  <main class="flex min-h-screen flex-col lg:flex-row">
+    <section class="relative flex flex-col justify-between gap-10 overflow-hidden bg-nimbus-950 px-6 py-8 text-white sm:px-12 lg:w-[46%] lg:py-14">
+      <svg viewBox="0 0 400 400" class="pointer-events-none absolute -bottom-40 -right-40 h-[36rem] w-[36rem] text-white/[0.04]" aria-hidden="true">
+        <circle v-for="r in [60, 120, 180]" :key="r" cx="200" cy="200" :r="r" fill="none" stroke="currentColor" stroke-width="24" />
+      </svg>
+      <NimbusLogo />
+      <div class="relative hidden max-w-md lg:block">
+        <h1 class="font-display text-5xl font-semibold leading-[1.05] tracking-tight">Your number stays yours.</h1>
+        <p class="mt-4 text-base leading-relaxed text-nimbus-200">
+          Nimbus watches for the signs of SIM-swap fraud and phone scams, and steps in before your line moves.
+        </p>
+      </div>
+      <ul class="relative hidden space-y-3 text-sm text-nimbus-200 lg:block">
+        <li v-for="f in ['Extra checks only when something looks off', 'Scam Shield screens incoming texts', 'Timing and motion only, never what you type']" :key="f" class="flex items-center gap-3">
+          <span class="grid h-6 w-6 place-items-center rounded-full bg-white/10 text-nimbus-accent"><Icon name="check" :size="14" /></span>{{ f }}
+        </li>
+      </ul>
+    </section>
 
-      <form v-if="step === 'password'" class="mt-6 space-y-4" @submit.prevent="submitPassword">
-        <label class="block text-sm">
-          Email
-          <input v-model="email" type="email" autocomplete="username" required class="mt-1 w-full rounded border-gray-300 border px-3 py-2" />
-        </label>
-        <label class="block text-sm">
-          Password
-          <input v-model="password" type="password" autocomplete="current-password" required class="mt-1 w-full rounded border-gray-300 border px-3 py-2" />
-        </label>
-        <button :disabled="busy" class="w-full rounded bg-nimbus text-white py-2 font-medium disabled:opacity-50">Sign in</button>
-      </form>
+    <section class="flex flex-1 items-center justify-center px-6 py-12">
+      <div class="w-full max-w-sm">
+        <Transition mode="out-in" enter-from-class="opacity-0 translate-x-2" enter-active-class="transition duration-200" leave-to-class="opacity-0 -translate-x-2" leave-active-class="transition duration-150">
+          <div :key="step">
+            <span v-if="step === 'totp'" class="mb-5 grid h-12 w-12 place-items-center rounded-2xl bg-nimbus-50 text-nimbus"><Icon name="lock" :size="24" /></span>
+            <h2 class="text-3xl font-semibold">{{ step === "password" ? "Sign in" : "Two-step verification" }}</h2>
+            <p v-if="session && step === 'password'" class="mt-2 text-sm text-ink-muted">
+              Signed in as {{ session.user.email }}. Sign in below to add another account, or
+              <NuxtLink to="/" class="link">go back to the portal</NuxtLink>.
+            </p>
+            <p v-else class="mt-2 text-sm text-ink-muted">
+              {{ step === "password" ? "Welcome back. Use the email on your account." : "Enter the 6-digit code from your authenticator app." }}
+            </p>
 
-      <form v-else class="mt-6 space-y-4" @submit.prevent="submitTotp">
-        <label class="block text-sm">
-          Authentication code
-          <input v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus class="mt-1 w-full rounded border-gray-300 border px-3 py-2 tracking-widest text-center text-lg" />
-        </label>
-        <button :disabled="busy" class="w-full rounded bg-nimbus text-white py-2 font-medium disabled:opacity-50">Verify</button>
-        <button type="button" class="w-full text-sm text-gray-500" @click="step = 'password'; code = ''">Back</button>
-      </form>
+            <p v-if="signedOutReason" class="notice-err mt-5" role="alert"><Icon name="alert" :size="18" class="mt-px" />{{ signedOutReason }}</p>
 
-      <p v-if="error" class="mt-4 text-sm text-red-600">{{ error }}</p>
-    </div>
-    <p class="fixed bottom-3 inset-x-0 px-6 text-center text-xs text-gray-400">
-      Demo portal. To help protect your account, Nimbus looks at how you type and move (timing and motion only, never
-      what you type).
-    </p>
+            <form v-if="step === 'password'" class="mt-8 space-y-5" @submit.prevent="submitPassword">
+              <label class="label">Email
+                <input v-model="email" type="email" autocomplete="username" required class="input" />
+              </label>
+              <label class="label">Password
+                <input v-model="password" type="password" autocomplete="current-password" required class="input" />
+              </label>
+              <button :disabled="busy" class="btn-primary w-full !py-3 text-[15px]">{{ busy ? "Signing in…" : "Continue" }}</button>
+            </form>
+
+            <form v-else class="mt-8 space-y-5" @submit.prevent="submitTotp">
+              <label class="label">Authentication code
+                <input v-model="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="000000" class="input text-center font-display text-2xl tracking-[0.5em]" />
+              </label>
+              <button :disabled="busy" class="btn-primary w-full !py-3 text-[15px]">{{ busy ? "Verifying…" : "Verify" }}</button>
+              <button type="button" class="btn-ghost w-full" @click="step = 'password'; code = ''"><Icon name="back" :size="16" />Back</button>
+            </form>
+
+            <p v-if="error" class="notice-err mt-5" role="alert"><Icon name="alert" :size="18" class="mt-px" />{{ error }}</p>
+          </div>
+        </Transition>
+
+        <p class="mt-10 text-center text-xs leading-relaxed text-ink-muted">
+          Demo portal with a fictional carrier and fictional data. To help protect your account, Nimbus looks at how you
+          type and move (timing and motion only, never what you type).
+        </p>
+      </div>
+    </section>
   </main>
 </template>

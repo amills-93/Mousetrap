@@ -3,21 +3,24 @@ const { data } = await useAccount();
 </script>
 
 <template>
-  <div v-if="data" class="space-y-6">
-    <h1 class="text-2xl font-semibold text-nimbus">Lines</h1>
-    <div class="grid gap-4 sm:grid-cols-2">
-      <Card v-for="l in data.lines" :key="l.id">
-        <div class="flex justify-between items-start">
-          <div>
-            <p class="font-medium">{{ l.nickname }}</p>
-            <p class="text-sm text-gray-500">{{ l.phone }}</p>
+  <div v-if="data">
+    <PageHeader title="Lines" :subtitle="`${data.lines.length} lines on this account`" />
+    <div class="grid gap-5 sm:grid-cols-2">
+      <NuxtLink v-for="l in data.lines" :key="l.id" :to="`/lines/${l.id}`" class="card-link group">
+        <div class="flex items-start gap-3">
+          <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-nimbus-50 text-nimbus"><Icon name="phone" :size="22" /></span>
+          <div class="min-w-0 flex-1">
+            <p class="truncate font-semibold">{{ l.nickname }}</p>
+            <p class="text-sm text-ink-muted">{{ l.phone }}</p>
           </div>
-          <span class="text-xs rounded-full bg-nimbus/10 text-nimbus px-2 py-0.5">{{ l.plan }}</span>
+          <span class="badge bg-nimbus-50 text-nimbus">{{ l.plan }}</span>
         </div>
-        <p class="text-sm text-gray-600 mt-3">{{ l.deviceName }} · SIM ••{{ l.simIccidLast4 }}</p>
-        <div class="mt-3"><UsageBar :used="l.dataUsedGb" :allowance="l.dataAllowanceGb" /></div>
-        <NuxtLink :to="`/lines/${l.id}`" class="mt-4 inline-block text-sm text-nimbus font-medium hover:underline">Manage line →</NuxtLink>
-      </Card>
+        <div class="mt-5"><UsageBar :used="l.dataUsedGb" :allowance="l.dataAllowanceGb" /></div>
+        <div class="mt-5 flex items-center justify-between border-t border-ink-line pt-4 text-sm">
+          <span class="text-ink-muted">{{ l.deviceName }} · SIM ••{{ l.simIccidLast4 }}</span>
+          <span class="link inline-flex items-center gap-1">Manage <Icon name="arrow" :size="16" class="transition group-hover:translate-x-0.5" /></span>
+        </div>
+      </NuxtLink>
     </div>
   </div>
 </template>
