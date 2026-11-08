@@ -1,0 +1,57 @@
+name: Deploy
+
+# Every push to main (and manual runs) redeploys the Azure demo VM after CI passes.
+# The VM and the OIDC identity come from deploy/azure/provision.sh, which also sets these environment variables.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_DOMAIN }}
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Pull and rebuild on the VM
+        run: |
+          # run-command does not propagate the script's exit code, so the script prints a marker on success.
+          out=$(az vm run-command invoke -g "${{ vars.AZURE_RG }}" -n "${{ vars.AZURE_VM }}" \
+            --command-id RunShellScript --query 'value[0].message' -o tsv --scripts "
+              set -e
+              cd /opt/mousetrap
+              git fetch -q origin main
+              git reset -q --hard ${{ github.sha }}
+              ./deploy/deploy.sh > /root/last-deploy.log 2>&1 || { tail -60 /root/last-deploy.log; exit 1; }
+              docker image prune -f > /dev/null
+              tail -5 /root/last-deploy.log
+              echo DEPLOY_OK")
+          echo "$out"
+          grep -q DEPLOY_OK <<< "$out"
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null "https://${{ vars.DEPLOY_DOMAIN }}/" && { echo "up"; exit 0; }
+            sleep 10
+          done
+          echo "site did not come up" >&2; exit 1
