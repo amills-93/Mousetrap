@@ -62,14 +62,25 @@ export interface CoachingSignals {
 export const PAUSE_AT = 0.5;
 export const FRESH_SESSION_MS = 5 * 60 * 1000;
 
-export function coachingScore(c: CoachingSignals | null | undefined, sessionAgeMs: number): { score: number; reasons: string[] } {
-  if (!c) return { score: 0, reasons: [] };
+// recentScamContact: a scam text of a kind that ends in an account action arrived in the last 24 h (7.6). It counts
+// even when ML's behavioral counts are unavailable.
+export function coachingScore(
+  c: CoachingSignals | null | undefined,
+  sessionAgeMs: number,
+  recentScamContact = false,
+): { score: number; reasons: string[] } {
   const parts: [number, string][] = [];
+  if (recentScamContact) parts.push([0.3, "received a likely scam text in the last 24 h"]);
+  if (!c) return finish(parts);
   if (c.tabSwitches) parts.push([0.3 * Math.min(c.tabSwitches, 2), `left the page and came back ${c.tabSwitches}x`]);
   if (c.pastes) parts.push([0.3, "pasted into a field"]);
   if (c.chunkedDigits >= 2) parts.push([0.25, "digits entered in spaced groups"]);
   if (c.longPauses) parts.push([0.15, "long silent pause"]);
   if (sessionAgeMs < FRESH_SESSION_MS && c.navs <= 2) parts.push([0.2, "went straight here after signing in"]);
+  return finish(parts);
+}
+
+function finish(parts: [number, string][]) {
   const score = Math.min(1, parts.reduce((s, [w]) => s + w, 0));
   return { score: Math.round(score * 100) / 100, reasons: parts.map(([, r]) => r) };
 }

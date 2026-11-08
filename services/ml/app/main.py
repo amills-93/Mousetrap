@@ -1,12 +1,13 @@
+import json
 import logging
 import os
 from collections import Counter
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
-from . import buffer, coaching, enrollment, features, model, scoring
+from . import buffer, classifier, coaching, enrollment, features, model, scoring
 from .schemas import (
-    ChallengeResponse, CloseRequest, EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse,
+    ChallengeResponse, ClassifyRequest, ClassifyResponse, CloseRequest, EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse,
     UserStatus,
 )
 
@@ -32,6 +33,21 @@ def valid_user(user_id: str) -> str:
 
 
 internal = [Depends(require_internal_key)]
+
+
+@app.post("/classify", response_model=ClassifyResponse, dependencies=internal)
+def classify(req: ClassifyRequest) -> ClassifyResponse:
+    """Scam verdict for one message (ARCHITECTURE.md 8.7). The text is scored and dropped, never stored or logged."""
+    return ClassifyResponse(**classifier.classify(req.text))
+
+
+@app.get("/classifier/metrics", dependencies=internal)
+def classifier_metrics() -> dict:
+    """Held-out evaluation written at training time."""
+    path = classifier.CLASSIFIER_DIR / "metrics.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="classifier not trained")
+    return json.loads(path.read_text())
 
 
 @app.get("/healthz")

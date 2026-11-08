@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
 import { mlChallengeResult, mlChallengeStart, mlFeedback, mlRisk, mlRiskClose, type MlRisk } from "./ml";
 import { MIN_WINDOWS, TYPING_ENFORCE, coachingScore, decide, judgeTyping, type Decision, type Tier, type TrustInput } from "./policy";
+import { recentScamContact } from "./messages";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
 
@@ -22,13 +23,14 @@ export async function loadTrust(
   sessionId: string,
   { closeWindow = false, sessionCreatedAt }: { closeWindow?: boolean; sessionCreatedAt?: Date } = {},
 ): Promise<{ input: TrustInput; ml: MlRisk | null; coaching: Coaching }> {
-  const [ml, profile, trust] = await Promise.all([
+  const [ml, profile, trust, scamContact] = await Promise.all([
     (closeWindow ? mlRiskClose(userId, sessionId) : mlRisk(sessionId)).catch(() => null),
     prisma.biometricProfile.findUnique({ where: { userId } }),
     prisma.sessionTrust.findUnique({ where: { sessionId } }),
+    recentScamContact(userId),
   ]);
   const ageMs = sessionCreatedAt ? Date.now() - new Date(sessionCreatedAt).getTime() : Infinity;
-  const coaching = coachingScore(ml?.coaching, ageMs);
+  const coaching = coachingScore(ml?.coaching, ageMs, scamContact);
   return {
     ml,
     coaching,

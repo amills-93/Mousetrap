@@ -145,6 +145,27 @@ class ChallengeResponse(BaseModel):
     risk: float | None  # mean keys risk of those windows (bot penalty included); None when windows == 0
 
 
+class ClassifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: Annotated[str, Field(min_length=1, max_length=2000)]
+
+
+class RedFlag(BaseModel):
+    id: str
+    label: str
+
+
+class ClassifyResponse(BaseModel):
+    verdict: Literal["scam", "suspicious", "ok"]
+    scamProbability: float
+    category: str | None  # taxonomy id, when verdict != "ok"
+    categoryLabel: str | None
+    categoryProbability: float | None
+    advice: str | None  # customer-facing, from the taxonomy
+    accountRisk: bool  # a scam of a kind that ends in an account action (raises the coaching score)
+    redFlags: list[RedFlag]
+
+
 class FeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     userId: Annotated[str, Field(min_length=1)]

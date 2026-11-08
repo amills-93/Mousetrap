@@ -4,6 +4,7 @@ const NAV = [
   { to: "/", label: "Overview" },
   { to: "/lines", label: "Lines" },
   { to: "/billing", label: "Billing" },
+  { to: "/messages", label: "Messages" },
   { to: "/profile", label: "Profile" },
   { to: "/security", label: "Security" },
   ...(demoMode ? [{ to: "/admin/risk", label: "Risk console (demo)" }] : []),

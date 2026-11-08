@@ -77,6 +77,20 @@ export const mlChallengeStart = (userId: string, sessionId: string) =>
 export const mlChallengeResult = (userId: string, sessionId: string) =>
   ml<MlChallenge>(`/challenge/${encodeURIComponent(sessionId)}/result`, { method: "POST", body: { userId }, timeout: 1000 });
 
+export interface MlVerdict {
+  verdict: "scam" | "suspicious" | "ok";
+  scamProbability: number;
+  category: string | null;
+  categoryLabel: string | null;
+  categoryProbability: number | null;
+  advice: string | null;
+  accountRisk: boolean;
+  redFlags: { id: string; label: string }[];
+}
+
+// Scam verdict for one text message (ARCHITECTURE.md 8.7). ML scores it and keeps nothing.
+export const mlClassify = (text: string) => ml<MlVerdict>("/classify", { method: "POST", body: { text }, timeout: 2000 });
+
 // After a successful step-up only (principle 5): ML adds the session's recent windows and retrains.
 export const mlFeedback = (body: { userId: string; sessionId: string; label: "genuine" }) =>
   ml<{ ok: boolean; windows: number }>("/feedback", { method: "POST", body });
