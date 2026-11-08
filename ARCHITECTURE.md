@@ -96,7 +96,7 @@ Nuxt: requireTrust(event, "critical")
   -> policy decision
      allow    -> perform action
      step_up  -> 403 {action:"step_up", challengeId}
-     deny     -> revoke session, 401 {action:"logout"}
+     deny     -> revoke session, 401 {action:"logout"} with no reason (the user is not told why)
 Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry original action
 ```
 
@@ -316,7 +316,7 @@ Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, 
 
 Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`, any subset, e.g. `{"critical":{"stepUp":0.3}}`) for tuning during the demo; restart `web` to apply.
 
-On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login?reason=risk`. Re-enrolling an active profile is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
+On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login`: plain, with no message, after a risk deny; `?reason=stepup_failed` after 3 wrong codes. Re-enrolling an active profile is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
 
 ## 8. ML service (services/ml)
 
