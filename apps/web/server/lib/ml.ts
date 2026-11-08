@@ -94,3 +94,6 @@ export const mlClassify = (text: string) => ml<MlVerdict>("/classify", { method:
 // After a successful step-up only (principle 5): ML adds the session's recent windows and retrains.
 export const mlFeedback = (body: { userId: string; sessionId: string; label: "genuine" }) =>
   ml<{ ok: boolean; windows: number }>("/feedback", { method: "POST", body });
+
+// DEMO_MODE only: ML forgets all per-session state (risk EWMA, coaching counts, buffers). Models are kept.
+export const mlDemoReset = () => ml<{ ok: boolean }>("/demo/reset", { method: "POST" });
