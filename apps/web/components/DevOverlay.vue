@@ -175,14 +175,14 @@ const statusClass = (s?: number) =>
   <div class="fixed bottom-3 left-3 z-50 font-mono text-[11px] leading-4 text-gray-200">
     <button
       v-if="!open"
-      class="rounded-full bg-gray-900/90 px-3 py-1.5 shadow-lg ring-1 ring-white/10 flex items-center gap-2"
+      class="rounded-full bg-nimbus-950/90 px-3 py-1.5 shadow-modal ring-1 ring-white/10 flex items-center gap-2"
       @click="open = true"
     >
       <span class="h-2 w-2 rounded-full" :class="dotClass" />
       {{ meter?.risk != null ? `risk ${meter.risk.toFixed(2)}` : "telemetry" }}
     </button>
 
-    <div v-else class="w-80 max-w-[calc(100vw-1.5rem)] rounded-lg bg-gray-900/90 shadow-xl ring-1 ring-white/10 backdrop-blur">
+    <div v-else class="w-80 max-w-[calc(100vw-1.5rem)] rounded-2xl bg-nimbus-950/90 shadow-modal ring-1 ring-white/10 backdrop-blur">
       <div class="flex items-center justify-between px-3 py-2 border-b border-white/10">
         <span class="flex items-center gap-2 font-semibold">
           <span class="h-2 w-2 rounded-full" :class="dotClass" />
