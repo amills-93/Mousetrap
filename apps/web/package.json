@@ -14,6 +14,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@mousetrap-auth/collector": "workspace:*",
     "@prisma/client": "6.19.3",
     "better-auth": "1.7.18",
     "nuxt": "3.21.11",

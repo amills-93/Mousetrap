@@ -10,6 +10,9 @@ export type CollectorEvent =
   | { k: "md"; t: number; x: number; y: number; b: number } // mousedown
   | { k: "mu"; t: number; x: number; y: number; b: number } // mouseup
   | { k: "wh"; t: number; dy: number } // wheel
+  | { k: "ts"; t: number; id: number; x: number; y: number; r: number; f: number } // touchstart
+  | { k: "tm"; t: number; id: number; x: number; y: number; r: number; f: number } // touchmove, throttled per touch
+  | { k: "te"; t: number; id: number; x: number; y: number; r: number; f: number } // touchend / touchcancel
   | { k: "fc"; t: number; role: string } // focus change: element role/type, never value
   | { k: "nv"; t: number; route: string }; // route change
 

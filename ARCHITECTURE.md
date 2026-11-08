@@ -126,6 +126,9 @@ type CollectorEvent =
   | { k: "md"; t: number; x: number; y: number; b: number }  // mousedown
   | { k: "mu"; t: number; x: number; y: number; b: number }  // mouseup
   | { k: "wh"; t: number; dy: number }                       // wheel
+  | { k: "ts"; t: number; id: number; x: number; y: number; r: number; f: number }  // touchstart
+  | { k: "tm"; t: number; id: number; x: number; y: number; r: number; f: number }  // touchmove, throttled per touch
+  | { k: "te"; t: number; id: number; x: number; y: number; r: number; f: number }  // touchend / touchcancel
   | { k: "fc"; t: number; role: string }                     // focus change: input role/type, never value
   | { k: "nv"; t: number; route: string };                   // route change
 
@@ -142,6 +145,8 @@ interface TelemetryBatch {
 - `t` is `performance.now()` rounded to 0.1 ms.
 - `code_hash` is a small stable hash of `KeyboardEvent.code` (not `key`), used only to pair keydown/keyup and compute digraph timing per physical key pair. Never send `key` or input values.
 - Ignore synthetic events (`event.isTrusted === false`) but count them; send a `synthetic` counter in the batch for bot detection.
+- Mouse events (`mm`/`md`/`mu`) come from pointer events with `pointerType === "mouse"`, so the emulated mouse events browsers fire after a tap never reach the mouse modality. Pen input is ignored.
+- Touch events (`ts`/`tm`/`te`) come from `TouchEvent`, not pointer events, because the browser cancels pointer streams once it starts scrolling and swipes are most of the touch signal. One event per changed touch point: `id` is `Touch.identifier & 0xffff` (pairs start/move/end within a gesture), `r` is contact radius in px (max of `radiusX`/`radiusY`), `f` is `force` 0..1 (0 where unsupported, e.g. most iOS).
 
 > Note: the tail of the `KeyClass` union and the `mm`/`fc` comments were truncated in the source PDF; `"nav" | "other"` and the comment text above are reconstructed from principle 3.
 
@@ -339,7 +344,14 @@ Mouse (if ≥ 10 move points):
 - click hold time (md to mu): mean, std
 - wheel: scroll rate, direction changes
 
-Missing modality features are imputed with the user's enrollment median, plus a binary `has_keys` / `has_mouse` flag.
+Touch (if ≥ 3 gestures, a gesture being one `id` from `ts` to `te`):
+
+- tap duration (`ts` to `te` for gestures under ~10 px of travel): mean, std
+- swipe: length, duration, speed mean/p90, straightness ratio, dominant direction share
+- contact radius and force: mean, std (force skipped when always 0)
+- inter-gesture gap: mean, std
+
+Missing modality features are imputed with the user's enrollment median, plus binary `has_keys` / `has_mouse` / `has_touch` flags.
 
 Log every feature vector to `models/{userId}/features.parquet` for debugging and plotting.
 
