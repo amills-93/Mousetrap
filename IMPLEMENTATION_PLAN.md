@@ -6,7 +6,7 @@ Time boxes assume the clock started at 4:00 PM Saturday and submission is around
 
 Parallel tracks (if you have teammates):
 - **Track A (platform):** Stages 1, 2, 7
-- **Track B (portal UI):** Stage 3, then RiskMeter and StepUpModal UI in 6 and 7
+- **Track B (portal UI):** Stage 3, then the DevOverlay risk meter and StepUpModal UI in 6 and 7
 - **Track C (ML):** Stages 4 (ML side), 5, 6 (ML side)
 
 Agree on the event schema (ARCHITECTURE.md 6.1) and the ML API contract (8.1) before splitting up. Those two contracts let the tracks work independently.
@@ -139,15 +139,16 @@ Tasks
 
 ---
 
-## Stage 6: Live scoring and RiskMeter (5:30 to 7:00 AM)
+## Stage 6: Live scoring and risk meter (5:30 to 7:00 AM)
 
 **Goal:** a live risk score that reacts to who is at the keyboard.
 
 Tasks
 - `scoring.py`: per-window risk, EWMA, session state, idle expiry, bot heuristics (8.5).
 - ML `/risk/{sessionId}` and `/users/{userId}/status`.
-- Nuxt `/api/risk` (current session only).
-- RiskMeter widget: score, threshold markers for each tier, status label, shown when `DEMO_MODE=true`.
+- `server/lib/policy.ts`: thresholds plus the pure `decide()` (ARCHITECTURE.md 7.4). Stage 7 wraps it in `requireTrust`.
+- Nuxt `/api/risk` (current session only): `{risk, windows, lastUpdated, components, thresholds, decisions}`, with `decisions` from `decide()` for each tier.
+- Risk meter as the top section of the existing `DevOverlay` (ARCHITECTURE.md 7.3), not a separate widget: poll `/api/risk` every 2 s while the collector is running, score bar with `stepUp`/`deny` markers per tier, status label from `decisions.critical`, window count, per-modality components. Color the collapsed pill's dot by risk. No client-side thresholds or decision logic.
 
 **Done when**
 - Owner uses their own account: meter stays low after ~30 s.
@@ -155,7 +156,7 @@ Tasks
 - Record rough numbers for both cases; you need them for thresholds.
 
 **Claude Code prompt**
-> Implement Stage 6: session scoring with EWMA and bot heuristics per ARCHITECTURE.md 8.5, the ML /risk and /users/{id}/status endpoints, Nuxt /api/risk, and the RiskMeter component showing score and the tier thresholds from 7.4.
+> Implement Stage 6: session scoring with EWMA and bot heuristics per ARCHITECTURE.md 8.5, the ML /risk and /users/{id}/status endpoints, the pure decide() in server/lib/policy.ts, Nuxt /api/risk returning server-computed decisions per tier, and the risk meter as the top section of the existing DevOverlay showing score and the tier thresholds from 7.4. The overlay only displays what /api/risk returns.
 
 ---
 
@@ -164,7 +165,7 @@ Tasks
 **Goal:** the actual product. Sensitive actions are gated by behavior.
 
 Tasks
-- `server/lib/policy.ts` with `requireTrust(event, tier)` exactly per 7.4, env-overridable thresholds.
+- `server/lib/policy.ts`: add `requireTrust(event, tier)` exactly per 7.4 around the Stage 6 `decide()` (session revoke on deny, `RiskEvent` write), env-overridable thresholds.
 - Apply it to every sensitive route from 7.3.
 - StepUpModal: shows on a `step_up` response, verifies TOTP, retries the original request.
 - `/api/stepup/verify`: Better Auth TOTP if it works with an active session, otherwise the `otplib` fallback.
@@ -227,4 +228,4 @@ Pick one, in this order of value:
 ## Cut list (if behind schedule)
 
 Cut in this order: stretch goals, `/admin/risk` timeline (keep the table), bot heuristics, feedback retraining, Authorized users page, vanilla adapter page (mention it instead), public deployment (demo from a laptop).
-Never cut: enrollment, live RiskMeter, step-up on SIM swap, logout on deny.
+Never cut: enrollment, live risk meter in the DevOverlay, step-up on SIM swap, logout on deny.

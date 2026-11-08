@@ -58,7 +58,7 @@ mousetrap/
 │     │  └─ api/account/*.ts  # lines, billing, sim, security actions
 │     ├─ plugins/collector.client.ts
 │     ├─ composables/useAuth.ts
-│     ├─ components/          # RiskMeter, AccountSwitcher, StepUpModal, etc.
+│     ├─ components/          # DevOverlay (risk meter + telemetry), AccountSwitcher, StepUpModal, etc.
 │     └─ pages/
 └─ services/
    └─ ml/
@@ -156,6 +156,8 @@ interface TelemetryBatch {
 const c = createCollector({ endpoint: "/api/telemetry", flushMs: 3000, maxBatch: 200 });
 c.start(); c.stop(); c.flush(); c.setRoute(path);
 ```
+
+- Optional observability hooks `onEvent(e)` and `onBatch(info)` (seq, event count, counts per kind, bytes, transport, HTTP status, latency, response) see exactly what is sent and nothing more. The DevOverlay (7.3) uses them; production builds leave them unset.
 
 - Vue adapter: Nuxt client plugin that calls `start()` after auth, `stop()` on sign-out, and hooks `router.afterEach` to `setRoute`.
 - Vanilla adapter: auto-start script tag for non-framework pages (used to prove modularity).
@@ -277,7 +279,14 @@ All seeded data is fictional: 555 phone numbers, fake account numbers, fake ICCI
 | `/enroll` | biometric enrollment flow | n/a |
 | `/admin/risk` | demo-only live view of all sessions and scores | demo flag |
 
-UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2D7C` primary, cyan `#22C3E6` accent, neutral grays). Persistent **RiskMeter** widget in the corner (polls `/api/risk` every 2 s) showing score, tier thresholds, and current status. Toggle it off for a "production" view.
+UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2D7C` primary, cyan `#22C3E6` accent, neutral grays).
+
+**DevOverlay** (`components/DevOverlay.vue`, rendered from `app.vue` only when `DEMO_MODE=true`, client-only): one persistent, collapsible panel in the bottom-left corner that shows the whole pipe. Collapse it (or set `DEMO_MODE=false`) for a "production" view. Sections, top to bottom:
+
+1. **Risk meter** (Stage 6): polls `GET /api/risk` every 2 s while signed in. Shows the session risk as a 0–1 bar with a marker per tier at its `stepUp` and `deny` thresholds (7.4), a status label, the window count, and the per-modality components (`keys`, `mouse`, `touch`). Bar color is green below the lowest `stepUp` threshold, amber up to the lowest `deny` threshold, and red above it. When collapsed, the pill's dot takes the same color.
+2. **Telemetry** (Stage 4): collector running/stopped and pending count, totals per modality plus `synthetic`, a feed of the latest events (key class and `code_hash` only), a trail of recent mouse/touch positions, and the latest batches (transport, bytes, HTTP status, latency, events buffered at ML).
+
+The meter only displays; it never decides (principle 1). `/api/risk` returns `{risk, windows, lastUpdated, components, thresholds, decisions}`, where `decisions` maps each tier to `allow | step_up | deny` as computed server-side by the same pure function `requireTrust` uses (7.4, steps 2–5, without side effects). The status label is the `critical` decision, e.g. "SIM swap would require step-up". The overlay draws the threshold markers from the `thresholds` the server returns, so `POLICY_THRESHOLDS_JSON` overrides show up live.
 
 ### 7.4 Policy (`server/lib/policy.ts`)
 
@@ -301,6 +310,8 @@ const THRESHOLDS: Record<Tier, { stepUp: number; deny: number }> = {
 5. If user's `BiometricProfile.status !== "active"`, require step-up for `critical`, allow others.
 6. Compare risk to thresholds; on `deny` call Better Auth to revoke the session.
 7. Write a `RiskEvent` for every decision.
+
+Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, profileActive, stepUpActive}, tier)` that `requireTrust` and `/api/risk` both call, so the overlay's meter and the enforcement can never disagree.
 
 Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`) for live tuning during the demo.
 
@@ -385,7 +396,7 @@ BETTER_AUTH_URL=http://localhost:3000
 ML_URL=http://ml:8000
 ML_INTERNAL_KEY=...
 POLICY_THRESHOLDS_JSON=
-DEMO_MODE=true          # enables RiskMeter and /admin/risk
+DEMO_MODE=true          # enables DevOverlay (risk meter + telemetry) and /admin/risk
 ```
 
 ## 11. Seed data
@@ -427,14 +438,14 @@ LLM_API_KEY=
 3. **Portal UI:** Nimbus Mobile pages from 7.3 with seeded data; account actions implemented without policy.
 4. **Collector:** core + Vue adapter; `/api/telemetry` forwarding to `/ingest`; ML logs received batches.
 5. **Features + enrollment:** windowing, features, `/enroll` page, training, feature parquet logging.
-6. **Scoring + RiskMeter:** EWMA risk, `/api/risk`, RiskMeter widget.
+6. **Scoring + risk meter:** EWMA risk, `/api/risk`, risk meter section in the DevOverlay.
 7. **Policy + step-up:** `requireTrust`, StepUpModal, verify endpoint, session revoke, RiskEvent audit, `/admin/risk`.
 8. **Modularity proof:** vanilla adapter on a plain HTML page served from `public/` using the same backend.
 9. **Polish + stretch:** bot heuristics, feedback retraining, threshold tuning via env, then optional embedding model.
 
 ## 14. Demo script (90 s)
 
-1. Alex signs in, browses, pays a bill; RiskMeter stays green.
+1. Alex signs in, browses, pays a bill; the overlay's risk meter stays green while its telemetry feed shows batches flowing.
 2. Show account switcher: second session (Jordan) in same browser.
 3. Switch back to Alex's session; a teammate takes the keyboard and mouse; meter climbs.
 4. Teammate opens SIM swap: step-up TOTP modal appears.
