@@ -46,7 +46,10 @@ def ingest(req: IngestRequest) -> IngestResponse:
 
     enroll_windows = None
     st = None
-    if enrollment.is_enrolling(user_id):
+    enrolling = enrollment.is_enrolling(user_id)
+    if enrolling and req.batch.synthetic:
+        phase = "bot"  # never learn a template from scripted input
+    elif enrolling:
         enroll_windows = enrollment.add(user_id, rows)
         phase = "enroll"
     else:
@@ -69,7 +72,9 @@ def ingest(req: IngestRequest) -> IngestResponse:
         (f" risk={st.risk:.2f} scored={st.windows}" if st else ""),
     )
     return IngestResponse(
-        ok=True, buffered=len(buf.events), windows=len(rows), enrollWindows=enroll_windows,
+        ok=True, buffered=len(buf.events), windows=len(rows),
+        enrolled=model.meta(user_id) is not None, enrolling=enrolling,
+        enrollReady=enrolling and enrollment.ready(user_id), enrollWindows=enroll_windows,
         risk=round(st.risk, 4) if st and st.windows else None, scoredWindows=st.windows if st else None,
     )
 
@@ -111,6 +116,9 @@ def user_status(user_id: str) -> UserStatus:
         enrolled=bool(meta),
         enrolling=enrollment.is_enrolling(user_id),
         enrollWindows=enrollment.count(user_id),
+        enrollKeyWindows=enrollment.key_count(user_id),
+        enrollTarget=enrollment.READY_WINDOWS,
+        enrollKeyTarget=enrollment.READY_KEY_WINDOWS,
         windowCount=meta.get("windowCount", 0),
         modelVersion=meta.get("version", 0),
     )

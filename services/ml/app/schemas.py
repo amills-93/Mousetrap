@@ -87,6 +87,9 @@ class IngestResponse(BaseModel):
     ok: bool
     buffered: int  # raw events held for this session
     windows: int  # windows completed by this batch
+    enrolled: bool = False  # the user has a trained model
+    enrolling: bool = False  # windows go to the enrollment buffer instead of scoring
+    enrollReady: bool = False  # enough enrollment windows to train; Nuxt calls /enroll/{id}/finish
     enrollWindows: int | None = None  # enrollment progress, when the user is enrolling
     risk: float | None = None  # session risk after this batch, when live-scored
     scoredWindows: int | None = None
@@ -103,6 +106,9 @@ class UserStatus(BaseModel):
     enrolled: bool
     enrolling: bool
     enrollWindows: int  # windows collected in the current enrollment
+    enrollKeyWindows: int  # of those, windows with typing
+    enrollTarget: int  # enrollWindows needed before training
+    enrollKeyTarget: int  # enrollKeyWindows needed before training
     windowCount: int  # windows the current model was trained on
     modelVersion: int
 

@@ -60,7 +60,8 @@ def test_full_enrollment(client, tmp_path):
     r = client.post("/enroll/u1/finish", headers=H).json()
     assert r["ok"] and r["modelVersion"] == 1
     st = client.get("/users/u1/status", headers=H).json()
-    assert st == {"enrolled": True, "enrolling": False, "enrollWindows": 0, "windowCount": r["windowCount"], "modelVersion": 1}
+    assert st["enrolled"] is True and st["enrolling"] is False and st["enrollWindows"] == 0
+    assert st["windowCount"] == r["windowCount"] and st["modelVersion"] == 1
     assert {p.name for p in (tmp_path / "u1").iterdir()} == {"model.joblib", "meta.json", "features.parquet", "training.parquet"}
 
 
@@ -94,13 +95,52 @@ def test_restart_start_resets_buffer(client):
     assert client.get("/users/u1/status", headers=H).json()["enrollWindows"] == 0
 
 
-def test_ml_restart_loses_enrollment(client):
-    """In-memory buffer: after a restart status reports not enrolling, so the page asks to start again."""
+def test_enrollment_survives_ml_restart(client):
+    """Passive enrollment spans sessions, so the buffer is rebuilt from the feature log after a restart."""
     client.post("/enroll/u1/start", headers=H)
-    feed(client, "u1", "s1", 5)
+    body, _ = feed(client, "u1", "s1", 5)
+    before = body["enrollWindows"]
     enrollment._enrolling.clear()  # simulate process restart
+    enrollment._logs.clear()
     st = client.get("/users/u1/status", headers=H).json()
-    assert st["enrolling"] is False and st["enrollWindows"] == 0
+    assert st["enrolling"] is True and st["enrollWindows"] == before
+    feed(client, "u1", "s1", 6, seq0=6)
+    assert client.post("/enroll/u1/finish", headers=H).json()["ok"]
+    enrollment._enrolling.clear()
+    assert client.get("/users/u1/status", headers=H).json()["enrolling"] is False
+
+
+def test_ingest_signals_ready(client):
+    body, _ = feed(client, "u1", "s1", 1)
+    assert body["enrolled"] is False and body["enrolling"] is False and body["enrollReady"] is False
+    client.post("/enroll/u1/start", headers=H)
+    body, _ = feed(client, "u1", "s1", 3, seq0=2)
+    assert body["enrolling"] is True and body["enrollReady"] is False
+    while not body["enrollReady"]:
+        body, _ = feed(client, "u1", "s1", 1, seq0=body["enrollWindows"] + 100)
+    st = client.get("/users/u1/status", headers=H).json()
+    assert st["enrollWindows"] >= st["enrollTarget"] and st["enrollKeyWindows"] >= st["enrollKeyTarget"]
+    assert client.post("/enroll/u1/finish", headers=H).json()["ok"]
+    body, _ = feed(client, "u1", "s1", 1, seq0=1000)
+    assert body["enrolled"] is True and body["enrolling"] is False
+
+
+def test_mouse_only_is_not_ready(client):
+    client.post("/enroll/u1/start", headers=H)
+    page, t = str(uuid.uuid4()), 0.0
+    for seq in range(1, 40):
+        m, t = mouse(t)
+        body = client.post("/ingest", headers=H, json={"userId": "u1", "sessionId": "s1", "batch": batch(page, seq, m)}).json()
+    assert body["enrollWindows"] >= enrollment.READY_WINDOWS and body["enrollReady"] is False
+
+
+def test_synthetic_batches_are_not_enrolled(client):
+    client.post("/enroll/u1/start", headers=H)
+    k, t = typing(0.0)
+    m, _ = mouse(t)
+    body = client.post("/ingest", headers=H, json={"userId": "u1", "sessionId": "s1", "batch": batch("p", 1, k + m, synthetic=3)}).json()
+    assert body["windows"] > 0 and body["enrollWindows"] is None
+    assert client.get("/users/u1/status", headers=H).json()["enrollWindows"] == 0
 
 
 def test_two_tabs_and_two_sessions(client):
