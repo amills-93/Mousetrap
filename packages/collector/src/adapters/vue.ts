@@ -29,3 +29,4 @@ export const collectorPlugin = {
 };
 
 export { createCollector, type Collector, type CollectorOptions };
+export type { BatchInfo } from "../core.js";

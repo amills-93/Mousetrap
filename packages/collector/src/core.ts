@@ -9,6 +9,21 @@ export interface CollectorOptions {
   flushMs?: number; // default 3000
   maxBatch?: number; // default 200
   mouseThrottleMs?: number; // default 20 (~50 Hz)
+  // Observability hooks (e.g. a dev overlay). They see exactly what is sent, nothing more.
+  onEvent?: (e: CollectorEvent) => void;
+  onBatch?: (info: BatchInfo) => void;
+}
+
+export interface BatchInfo {
+  seq: number;
+  events: number;
+  kinds: Partial<Record<CollectorEvent["k"], number>>;
+  synthetic: number;
+  bytes: number;
+  transport: "fetch" | "beacon";
+  status?: number; // HTTP status (fetch only); 0 on network error
+  ms?: number; // round-trip time (fetch only)
+  response?: Response;
 }
 
 export interface Collector {
@@ -77,6 +92,7 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
 
   function push(e: CollectorEvent) {
     events.push(e);
+    opts.onEvent?.(e);
     if (events.length >= maxBatch) flush();
   }
 
@@ -87,8 +103,10 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
     return false;
   }
 
-  function takeBatch(): string | null {
+  function takeBatch(transport: BatchInfo["transport"]): { body: string; info: BatchInfo } | null {
     if (events.length === 0 && synthetic === 0) return null;
+    const kinds: BatchInfo["kinds"] = {};
+    for (const e of events) kinds[e.k] = (kinds[e.k] ?? 0) + 1;
     const batch: TelemetryBatch = {
       v: 1,
       pageId,
@@ -98,27 +116,34 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
       events,
     };
     if (synthetic) batch.synthetic = synthetic;
+    const body = JSON.stringify(batch);
+    const info: BatchInfo = { seq: batch.seq, events: events.length, kinds, synthetic, bytes: body.length, transport };
     events = [];
     synthetic = 0;
-    return JSON.stringify(batch);
+    return { body, info };
   }
 
   function flush() {
-    const body = takeBatch();
-    if (!body) return;
+    const taken = takeBatch("fetch");
+    if (!taken) return;
+    const started = performance.now();
+    const done = (status: number, response?: Response) =>
+      opts.onBatch?.({ ...taken.info, status, ms: Math.round(performance.now() - started), response });
     fetch(endpoint, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body,
+      body: taken.body,
       keepalive: true,
-    }).catch(() => {}); // best effort; the server treats missing telemetry as risk
+    }).then((r) => done(r.status, r), () => done(0)); // best effort; the server treats missing telemetry as risk
   }
 
   // pagehide: sendBeacon survives unload. text/plain keeps it a CORS-simple request.
   function beacon() {
-    const body = takeBatch();
-    if (body) navigator.sendBeacon(endpoint, new Blob([body], { type: "text/plain" }));
+    const taken = takeBatch("beacon");
+    if (!taken) return;
+    navigator.sendBeacon(endpoint, new Blob([taken.body], { type: "text/plain" }));
+    opts.onBatch?.(taken.info);
   }
 
   const onKey = (e: KeyboardEvent) => {

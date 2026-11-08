@@ -35,12 +35,10 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    await mlIngest({ userId: user.id, sessionId: session.id, batch });
+    const { buffered } = await mlIngest({ userId: user.id, sessionId: session.id, batch });
+    return { buffered }; // events held for this session at ML; shown by the dev overlay
   } catch (err) {
     console.error("[telemetry] ML ingest failed:", (err as Error).message);
     throw createError({ statusCode: 502, statusMessage: "ML service unavailable" });
   }
-
-  setResponseStatus(event, 204);
-  return null;
 });
