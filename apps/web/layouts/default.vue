@@ -56,7 +56,10 @@ const active = (to: string) => (to === "/" ? route.path === "/" : route.path.sta
     <header class="sticky top-0 z-40 bg-nimbus-950 text-white lg:hidden">
       <div class="flex h-14 items-center justify-between px-4">
         <NuxtLink to="/"><NimbusLogo compact /></NuxtLink>
-        <AccountSwitcher compact />
+        <div class="flex items-center gap-2">
+          <DemoReset v-if="demoMode" />
+          <AccountSwitcher compact />
+        </div>
       </div>
       <nav class="flex gap-1 overflow-x-auto px-2 pb-2" aria-label="Main">
         <NuxtLink
@@ -73,6 +76,11 @@ const active = (to: string) => (to === "/" ? route.path === "/" : route.path.sta
     </header>
 
     <main class="min-w-0 flex-1">
+      <!-- Desktop demo bar (the mobile header carries the same button) -->
+      <div v-if="demoMode" class="sticky top-0 z-30 hidden h-12 items-center justify-end gap-3 bg-nimbus-950 px-8 lg:flex">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-nimbus-400">Demo mode</span>
+        <DemoReset />
+      </div>
       <div class="mx-auto max-w-5xl px-4 py-8 sm:px-8 lg:py-12">
         <slot />
       </div>

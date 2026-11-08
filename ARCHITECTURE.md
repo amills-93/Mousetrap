@@ -306,6 +306,7 @@ All seeded data is fictional: 555 phone numbers, fake account numbers, fake ICCI
 | `/security/sim` | SIM swap / eSIM transfer to new device | `critical` |
 | `/security/authorized-users` | add authorized user | `critical` |
 | `/admin/risk` | demo-only live view of all sessions and scores | demo flag |
+| `POST /api/admin/reset` | demo-only "Reset demo" (top bar): clears step-up windows and failures, TOTP lockouts, scam holds, risk events, inboxes, and ML session state for every account. Keeps users, sessions and trained models | demo flag + session |
 
 UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2D7C` primary, cyan `#22C3E6` accent, neutral grays).
 
@@ -400,6 +401,7 @@ Many carrier scams end with the real owner making the change: a caller posing as
 | POST | `/enroll/{userId}/start` | start (or restart) enrollment with an empty buffer |
 | POST | `/enroll/{userId}/finish` | train model, return `{windowCount, ok}` |
 | POST | `/feedback` | `{userId, sessionId, label}`; on `genuine`, add recent windows and retrain in background |
+| POST | `/demo/reset` | demo only: drop every session's buffer, risk EWMA, challenge and coaching counts; models are kept |
 | GET | `/users/{userId}/status` | enrolled?, enrolling?, enrollment progress and targets, window count, model version |
 | GET | `/healthz` | liveness |
 
