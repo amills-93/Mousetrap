@@ -40,6 +40,15 @@ class WheelEvent(_Event):
     dy: float
 
 
+class TouchEvent(_Event):
+    k: Literal["ts", "tm", "te"]
+    id: Annotated[int, Field(ge=0, le=0xFFFF)]
+    x: int
+    y: int
+    r: Annotated[float, Field(ge=0, le=1000)]  # contact radius, px
+    f: Annotated[float, Field(ge=0, le=1)]  # force; 0 when unsupported
+
+
 class FocusEvent(_Event):
     k: Literal["fc"]
     role: Annotated[str, Field(max_length=40)]
@@ -51,7 +60,7 @@ class NavEvent(_Event):
 
 
 CollectorEvent = Annotated[
-    Union[KeyEvent, MoveEvent, ButtonEvent, WheelEvent, FocusEvent, NavEvent],
+    Union[KeyEvent, MoveEvent, ButtonEvent, WheelEvent, TouchEvent, FocusEvent, NavEvent],
     Field(discriminator="k"),
 ]
 

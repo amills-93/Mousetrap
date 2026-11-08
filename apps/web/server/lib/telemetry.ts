@@ -6,6 +6,7 @@ const coord = z.number().int();
 const KeyClass = z.enum(["letter", "digit", "space", "backspace", "enter", "modifier", "nav", "other"]);
 const Key = { t, kc: KeyClass, code_hash: z.number().int().min(0).max(0xffff) };
 const Button = { t, x: coord, y: coord, b: z.number().int().min(0).max(4) };
+const Touch = { t, id: z.number().int().min(0).max(0xffff), x: coord, y: coord, r: z.number().min(0).max(1000), f: z.number().min(0).max(1) };
 
 // z.object strips unknown keys, so anything beyond schema v1 (e.g. a stray `key`) never reaches ML.
 const CollectorEvent = z.discriminatedUnion("k", [
@@ -15,6 +16,9 @@ const CollectorEvent = z.discriminatedUnion("k", [
   z.object({ k: z.literal("md"), ...Button }),
   z.object({ k: z.literal("mu"), ...Button }),
   z.object({ k: z.literal("wh"), t, dy: z.number() }),
+  z.object({ k: z.literal("ts"), ...Touch }),
+  z.object({ k: z.literal("tm"), ...Touch }),
+  z.object({ k: z.literal("te"), ...Touch }),
   z.object({ k: z.literal("fc"), t, role: z.string().max(40) }),
   z.object({ k: z.literal("nv"), t, route: z.string().max(200) }),
 ]);

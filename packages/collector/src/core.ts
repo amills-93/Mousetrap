@@ -71,6 +71,7 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
   let events: CollectorEvent[] = [];
   let synthetic = 0;
   let lastMove = -Infinity;
+  const lastTouchMove = new Map<number, number>(); // touch id -> last tm time
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
 
@@ -124,16 +125,43 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
     if (!trusted(e) || e.repeat) return;
     push({ k: e.type === "keydown" ? "kd" : "ku", t: now(), kc: keyClass(e.code), code_hash: codeHash(e.code) });
   };
-  const onMove = (e: MouseEvent) => {
-    if (!trusted(e)) return;
+  // Mouse goes through pointer events filtered to pointerType "mouse": on touch screens the browser also
+  // fires emulated mouse events after a tap, which would otherwise pollute the mouse modality.
+  // Pen input is ignored for now.
+  const onMove = (e: PointerEvent) => {
+    if (e.pointerType !== "mouse" || !trusted(e)) return;
     const t = now();
     if (t - lastMove < throttleMs) return;
     lastMove = t;
     push({ k: "mm", t, x: Math.round(e.clientX), y: Math.round(e.clientY) });
   };
-  const onButton = (e: MouseEvent) => {
+  const onButton = (e: PointerEvent) => {
+    if (e.pointerType !== "mouse" || !trusted(e)) return;
+    push({ k: e.type === "pointerdown" ? "md" : "mu", t: now(), x: Math.round(e.clientX), y: Math.round(e.clientY), b: e.button });
+  };
+  // Touch uses TouchEvents, not pointer events: pointer streams are cancelled once the browser starts
+  // scrolling, and swipes/scrolls are most of the touch signal. One event per changed touch point.
+  // r = contact radius in px, f = force 0..1 (0 where the hardware doesn't report it).
+  const onTouch = (e: TouchEvent) => {
     if (!trusted(e)) return;
-    push({ k: e.type === "mousedown" ? "md" : "mu", t: now(), x: Math.round(e.clientX), y: Math.round(e.clientY), b: e.button });
+    const t = now();
+    const k = e.type === "touchstart" ? "ts" : e.type === "touchmove" ? "tm" : "te";
+    for (const p of Array.from(e.changedTouches)) {
+      const id = p.identifier & 0xffff;
+      if (k === "tm") {
+        if (t - (lastTouchMove.get(id) ?? -Infinity) < throttleMs) continue;
+        lastTouchMove.set(id, t);
+      } else if (k === "te") {
+        lastTouchMove.delete(id);
+      }
+      push({
+        k, t, id,
+        x: Math.round(p.clientX),
+        y: Math.round(p.clientY),
+        r: Math.round(Math.max(p.radiusX || 0, p.radiusY || 0) * 10) / 10,
+        f: Math.round((p.force || 0) * 1000) / 1000,
+      });
+    }
   };
   const onWheel = (e: WheelEvent) => {
     if (!trusted(e)) return;
@@ -150,9 +178,13 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
   const listeners: [EventTarget, string, EventListener][] = [
     [window, "keydown", onKey as EventListener],
     [window, "keyup", onKey as EventListener],
-    [window, "mousemove", onMove as EventListener],
-    [window, "mousedown", onButton as EventListener],
-    [window, "mouseup", onButton as EventListener],
+    [window, "pointermove", onMove as EventListener],
+    [window, "pointerdown", onButton as EventListener],
+    [window, "pointerup", onButton as EventListener],
+    [window, "touchstart", onTouch as EventListener],
+    [window, "touchmove", onTouch as EventListener],
+    [window, "touchend", onTouch as EventListener],
+    [window, "touchcancel", onTouch as EventListener],
     [window, "wheel", onWheel as EventListener],
     [window, "focusin", onFocus as EventListener],
     [window, "pagehide", beacon],
