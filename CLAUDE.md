@@ -35,5 +35,6 @@ Also: no real carrier branding, no real personal data (555 numbers, fake ICCIDs/
 
 - Branches: `main` (release/demo), `staging` (pre-release integration), `dev` (active integration).
 - Every feature/fix gets its own branch off `dev` (`feature/<name>`, `fix/<name>`, `docs/<name>`), merged back into `dev` via PR. Promote `dev` → `staging` → `main` via PRs.
+- Within a branch, commit as you go: make multiple focused commits at logical checkpoints (e.g. schema + migration, server routes, UI, seed) rather than one large commit at the end.
 - Commits and PRs are authored as the repo owner (repo-local git identity is set). Do not add Claude co-author trailers or "Generated with" footers.
 - The owner approves and merges PRs; do not merge them yourself.
