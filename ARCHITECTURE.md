@@ -102,13 +102,14 @@ Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry origina
 
 ### 5.3 Step-up success
 
+- `/api/stepup/verify` checks the code with Better Auth's own `verifyTOTP` against the active session (same authenticator entry as sign-in; with a session it creates no new session and applies no lockout). The `otplib` / `StepUpFactor` fallback is unused.
 - Mark session `stepUpUntil = now + 5 min` (stored in `SessionTrust` table, keyed by Better Auth session id).
-- Call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. ML may append the last N windows of this session to the user's training set and retrain asynchronously.
+- Call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
 - Within the `stepUpUntil` window, `requireTrust` returns `allow` for tiers up to `critical`.
 
 ### 5.4 Step-up failure
 
-- 3 failed TOTP attempts -> revoke session, write `RiskEvent(type: "stepup_failed")`, redirect to login.
+- Each wrong code writes `RiskEvent(type: "stepup_failed")` and increments `SessionTrust.failedStepUp`; the 3rd revokes the session and returns 401 `{action:"logout"}`, and the client redirects to `/login?reason=stepup_failed` (`/login` maps reason codes to fixed text).
 
 ## 6. Collector SDK (packages/collector)
 
@@ -313,7 +314,9 @@ const THRESHOLDS: Record<Tier, { stepUp: number; deny: number }> = {
 
 Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, profileActive, stepUpActive}, tier)` that `requireTrust` and `/api/risk` both call, so the overlay's meter and the enforcement can never disagree.
 
-Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`) for live tuning during the demo.
+Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`, any subset, e.g. `{"critical":{"stepUp":0.3}}`) for tuning during the demo; restart `web` to apply.
+
+On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login?reason=risk`. Re-enrolling an active profile is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
 
 ## 8. ML service (services/ml)
 

@@ -1,10 +1,12 @@
 <script setup lang="ts">
+const { demoMode } = useRuntimeConfig().public;
 const NAV = [
   { to: "/", label: "Overview" },
   { to: "/lines", label: "Lines" },
   { to: "/billing", label: "Billing" },
   { to: "/profile", label: "Profile" },
   { to: "/security", label: "Security" },
+  ...(demoMode ? [{ to: "/admin/risk", label: "Risk console (demo)" }] : []),
 ];
 const route = useRoute();
 const active = (to: string) => (to === "/" ? route.path === "/" : route.path.startsWith(to));
