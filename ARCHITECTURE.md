@@ -104,7 +104,7 @@ Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry origina
 
 - `/api/stepup/verify` checks the code with Better Auth's own `verifyTOTP` against the active session (same authenticator entry as sign-in; with a session it creates no new session and applies no lockout). The `otplib` / `StepUpFactor` fallback is unused.
 - Mark session `stepUpUntil = now + 60 s` (stored in `SessionTrust` table, keyed by Better Auth session id).
-- Call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
+- If ML had scored at least `MIN_WINDOWS` (3) windows of the session, call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. A step-up forced only by missing telemetry sends no feedback: it is passed with the same TOTP used to sign in, so it says nothing about whose windows those are. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
 - Within the `stepUpUntil` window, `requireTrust` skips step-up for every tier, but a risk at or above a tier's `deny` threshold still revokes the session.
 
 ### 5.4 Step-up failure

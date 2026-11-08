@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
 import { mlFeedback, mlRisk, type MlRisk } from "./ml";
-import { decide, type Decision, type Tier, type TrustInput } from "./policy";
+import { MIN_WINDOWS, decide, type Decision, type Tier, type TrustInput } from "./policy";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
 
@@ -67,7 +67,9 @@ export async function requireTrust(event: H3Event, tier: Tier) {
   return auth;
 }
 
-// Record a step-up attempt. Success opens the 60 s window and tells ML the recent windows are genuine.
+// Record a step-up attempt. Success opens the 60 s window and, when ML had already scored the session, tells it
+// the recent windows are genuine. A step-up forced by missing telemetry (e.g. a SIM swap right after sign-in) is
+// passed with the same TOTP used to sign in, so its windows prove nothing and could be an attacker's.
 export async function recordStepUp(userId: string, sessionId: string, ok: boolean) {
   if (ok) {
     const stepUpUntil = new Date(Date.now() + STEP_UP_TTL_MS);
@@ -77,7 +79,10 @@ export async function recordStepUp(userId: string, sessionId: string, ok: boolea
       update: { stepUpUntil, failedStepUp: 0 },
     });
     await logRiskEvent({ userId, sessionId, type: "stepup_ok" });
-    mlFeedback({ userId, sessionId, label: "genuine" }).catch((err) => console.error("[trust] ML feedback failed:", err.message));
+    const ml = await mlRisk(sessionId).catch(() => null);
+    if (ml && ml.windows >= MIN_WINDOWS) {
+      mlFeedback({ userId, sessionId, label: "genuine" }).catch((err) => console.error("[trust] ML feedback failed:", err.message));
+    }
     return { stepUpUntil, attemptsLeft: MAX_STEP_UP_FAILURES };
   }
   const trust = await prisma.sessionTrust.upsert({
