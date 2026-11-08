@@ -21,6 +21,5 @@ export default defineEventHandler(async (event) => {
     mlAvailable: ml !== null,
     profileActive: input.profileActive,
     stepUpActive: input.stepUpActive,
-    locked: input.locked,
   };
 });

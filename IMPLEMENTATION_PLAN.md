@@ -170,7 +170,7 @@ Tasks
 - StepUpModal: shows on a `step_up` response, verifies TOTP, retries the original request.
 - `/api/stepup/verify`: Better Auth TOTP if it works with an active session, otherwise the `otplib` fallback.
 - `SessionTrust`: `stepUpUntil` and failed-attempt counting; 3 failures revoke the session.
-- Deny path: lock the session (`SessionTrust.lockedAt`); gated actions return 403 `locked` for the rest of the session (ARCHITECTURE.md 5.3a).
+- Deny path: revoke the Better Auth session, client redirects to `/login` with a message.
 - ML `/feedback` on step-up success.
 - `RiskEvent` written for every decision; `/admin/risk` page lists sessions, scores, and a decision timeline.
 
@@ -228,4 +228,4 @@ Pick one, in this order of value:
 ## Cut list (if behind schedule)
 
 Cut in this order: stretch goals, `/admin/risk` timeline (keep the table), bot heuristics, feedback retraining, Authorized users page, vanilla adapter page (mention it instead), public deployment (demo from a laptop).
-Never cut: enrollment, live risk meter in the DevOverlay, step-up on SIM swap, session lock on deny.
+Never cut: enrollment, live risk meter in the DevOverlay, step-up on SIM swap, logout on deny.

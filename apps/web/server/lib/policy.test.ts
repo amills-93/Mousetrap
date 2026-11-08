@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decide, decideAll, thresholds, type TrustInput } from "./policy";
 
-const base: TrustInput = { risk: 0.1, windows: 10, profileActive: true, stepUpActive: false, locked: false };
+const base: TrustInput = { risk: 0.1, windows: 10, profileActive: true, stepUpActive: false };
 
 test("low risk allows every tier", () => {
   assert.deepEqual(decideAll(base), { view: "allow", standard: "allow", elevated: "allow", critical: "allow" });
@@ -29,12 +29,6 @@ test("recent step-up skips step-up but not deny", () => {
   assert.equal(decide({ ...base, risk: 0.85, stepUpActive: true }, "critical"), "deny");
   assert.equal(decide({ ...base, risk: 0.85, stepUpActive: true }, "elevated"), "allow");
   assert.equal(decide({ ...base, windows: 0, stepUpActive: true }, "critical"), "allow"); // unknown risk never denies
-});
-
-test("locked session: view only, even after step-up or with low risk", () => {
-  assert.deepEqual(decideAll({ ...base, locked: true, stepUpActive: true }), {
-    view: "allow", standard: "deny", elevated: "deny", critical: "deny",
-  });
 });
 
 test("no profile: recent step-up allows critical", () => {

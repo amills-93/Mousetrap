@@ -1,5 +1,5 @@
 // Enforcement around the pure policy (ARCHITECTURE.md 5.2-5.4, 7.4): gathers decide()'s inputs, logs every
-// decision as a RiskEvent, locks the session on deny, and tracks step-up state in SessionTrust.
+// decision as a RiskEvent, revokes the session on deny, and tracks step-up state in SessionTrust.
 import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
 import { mlFeedback, mlRisk, type MlRisk } from "./ml";
@@ -23,7 +23,6 @@ export async function loadTrust(userId: string, sessionId: string): Promise<{ in
       windows: ml?.windows ?? 0,
       profileActive: profile?.status === "active",
       stepUpActive: !!trust?.stepUpUntil && trust.stepUpUntil > new Date(),
-      locked: !!trust?.lockedAt,
     },
   };
 }
@@ -36,30 +35,17 @@ export function logRiskEvent(e: { userId: string; sessionId: string; type: Event
     .catch((err) => console.error("[trust] RiskEvent write failed:", err.message));
 }
 
-// Revoke the Better Auth session (too many failed step-ups). Other sessions in the browser survive.
+// Revoke the Better Auth session (deny / too many failed step-ups). Other sessions in the browser survive.
 export async function revokeSession(sessionId: string) {
   await prisma.session.deleteMany({ where: { id: sessionId } });
   await prisma.sessionTrust.deleteMany({ where: { sessionId } });
 }
 
 // reason is a code; /login maps it to text (never echo free text from the URL).
-const logout = (reason: "stepup_failed", message: string) =>
+const logout = (reason: "risk" | "stepup_failed", message: string) =>
   createError({ statusCode: 401, statusMessage: message, data: { action: "logout", reason } });
 
-// A locked session stays signed in and can browse, but no gated action or step-up succeeds in it again.
-export const lockedError = () =>
-  createError({
-    statusCode: 403,
-    statusMessage: "This session is locked because it no longer looks like the account owner. Sign out and sign in again to make changes.",
-    data: { action: "locked" },
-  });
-
-export async function isLocked(sessionId: string) {
-  const trust = await prisma.sessionTrust.findUnique({ where: { sessionId }, select: { lockedAt: true } });
-  return !!trust?.lockedAt;
-}
-
-// Gate a sensitive route. Returns the session on allow; throws 403 {action:"step_up"} or 403 {action:"locked"}.
+// Gate a sensitive route. Returns the session on allow; throws 403 {action:"step_up"} or 401 {action:"logout"}.
 export async function requireTrust(event: H3Event, tier: Tier) {
   const auth = await requireSession(event);
   const { user, session } = auth;
@@ -68,14 +54,8 @@ export async function requireTrust(event: H3Event, tier: Tier) {
   await logRiskEvent({ userId: user.id, sessionId: session.id, type: decision, tier, risk: input.risk, route: event.path });
 
   if (decision === "deny") {
-    if (!input.locked) {
-      await prisma.sessionTrust.upsert({
-        where: { sessionId: session.id },
-        create: { sessionId: session.id, userId: user.id, lockedAt: new Date() },
-        update: { lockedAt: new Date(), stepUpUntil: null },
-      });
-    }
-    throw lockedError();
+    await revokeSession(session.id);
+    throw logout("risk", "Signed out: this session no longer looks like the account owner.");
   }
   if (decision === "step_up") {
     throw createError({

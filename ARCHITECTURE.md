@@ -4,7 +4,7 @@ Hackathon build spec (HackUTD 2026, ~21 hours). This document is the source of t
 
 ## 1. Goal
 
-A demo telecom account portal for a **fictional carrier, "Nimbus Mobile"** (original name, logo, and color palette; do not use any real carrier's branding). While a signed-in user interacts with the portal, a collector streams keystroke and mouse telemetry to a Python ML service that scores how closely the behavior matches the account owner. When the user attempts a sensitive action, the backend checks the live risk score and either allows it, demands TOTP step-up, or locks the session so no further changes can be made from it.
+A demo telecom account portal for a **fictional carrier, "Nimbus Mobile"** (original name, logo, and color palette; do not use any real carrier's branding). While a signed-in user interacts with the portal, a collector streams keystroke and mouse telemetry to a Python ML service that scores how closely the behavior matches the account owner. When the user attempts a sensitive action, the backend checks the live risk score and either allows it, demands TOTP step-up, or revokes the session and redirects to login.
 
 Headline claim for judges: the collector is a framework-agnostic core with thin adapters, so the layer can sit in front of any web app.
 
@@ -96,7 +96,7 @@ Nuxt: requireTrust(event, "critical")
   -> policy decision
      allow    -> perform action
      step_up  -> 403 {action:"step_up", challengeId}
-     deny     -> lock session (SessionTrust.lockedAt), 403 {action:"locked"}
+     deny     -> revoke session, 401 {action:"logout"}
 Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry original action
 ```
 
@@ -105,13 +105,7 @@ Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry origina
 - `/api/stepup/verify` checks the code with Better Auth's own `verifyTOTP` against the active session (same authenticator entry as sign-in; with a session it creates no new session and applies no lockout). The `otplib` / `StepUpFactor` fallback is unused.
 - Mark session `stepUpUntil = now + 60 s` (stored in `SessionTrust` table, keyed by Better Auth session id).
 - Call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
-- Within the `stepUpUntil` window, `requireTrust` skips step-up for every tier, but a risk at or above a tier's `deny` threshold still locks the session.
-
-### 5.3a Session lock (deny)
-
-- A `deny` sets `SessionTrust.lockedAt`. The user stays signed in and can still browse, but from then on `decide()` returns `deny` for every tier above `view` in that session, and each gated request gets 403 `{action:"locked"}` with a message the form shows.
-- A locked session cannot step up: `/api/stepup/verify` returns the same 403 before checking the code, so a code neither unlocks it nor sends its windows to ML as genuine (principle 5).
-- Signing out and back in (password + TOTP) creates a new, unlocked session.
+- Within the `stepUpUntil` window, `requireTrust` skips step-up for every tier, but a risk at or above a tier's `deny` threshold still revokes the session.
 
 ### 5.4 Step-up failure
 
@@ -247,7 +241,6 @@ model SessionTrust {
   userId       String
   stepUpUntil  DateTime?
   failedStepUp Int       @default(0)
-  lockedAt     DateTime?           // set on deny; gated actions stay denied in this session
   updatedAt    DateTime  @updatedAt
 }
 
@@ -312,18 +305,18 @@ const THRESHOLDS: Record<Tier, { stepUp: number; deny: number }> = {
 `requireTrust(event, tier)`:
 
 1. Resolve session; if none, 401.
-2. If `SessionTrust.lockedAt` is set, deny every tier above `view`. If `SessionTrust.stepUpUntil > now`, allow unless risk reaches the tier's `deny` threshold (checked in step 6).
+2. If `SessionTrust.stepUpUntil > now`, allow unless risk reaches the tier's `deny` threshold (checked in step 6).
 3. Fetch `/risk/{sessionId}` from ML (timeout 300 ms).
 4. If ML unreachable or `windows < MIN_WINDOWS (3)`, treat risk as `0.6` for `elevated`/`critical` (forces step-up), `0` otherwise.
 5. If user's `BiometricProfile.status !== "active"`, require step-up for `critical`, allow others.
-6. Compare risk to thresholds; on `deny` lock the session (5.3a).
+6. Compare risk to thresholds; on `deny` call Better Auth to revoke the session.
 7. Write a `RiskEvent` for every decision.
 
 Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, profileActive, stepUpActive}, tier)` that `requireTrust` and `/api/risk` both call, so the overlay's meter and the enforcement can never disagree.
 
 Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`, any subset, e.g. `{"critical":{"stepUp":0.3}}`) for tuning during the demo; restart `web` to apply.
 
-On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 403 `locked` is rethrown so the form shows its message; a 401 `logout` (3 wrong codes) reloads to `/login?reason=stepup_failed`. Re-enrolling an active profile is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
+On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login?reason=risk`. Re-enrolling an active profile is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
 
 ## 8. ML service (services/ml)
 
@@ -464,5 +457,5 @@ LLM_API_KEY=
 2. Show account switcher: second session (Jordan) in same browser.
 3. Switch back to Alex's session; a teammate takes the keyboard and mouse; meter climbs.
 4. Teammate opens SIM swap: step-up TOTP modal appears.
-5. Teammate keeps pushing: risk hits deny and the session locks (every change refused); 3 wrong codes sign them out.
+5. Teammate keeps pushing / fails TOTP: session revoked, back to login.
 6. Show `/admin/risk` timeline and the vanilla-adapter page to prove the front end is swappable.

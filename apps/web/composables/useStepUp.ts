@@ -1,6 +1,6 @@
 // Client half of step-up (ARCHITECTURE.md 5.2): trustedFetch() runs a request; on 403 {action:"step_up"} it
 // opens the StepUpModal, waits for a verified code, and retries once. On 401 {action:"logout"} it sends the
-// browser to /login with the server's reason. A 403 {action:"locked"} is rethrown so the form shows its message. The server decides; this only reacts to its answers.
+// browser to /login with the server's reason. The server decides; this only reacts to its answers.
 type FetchOptions = { method?: "GET" | "POST" | "PATCH"; body?: Record<string, unknown> };
 // Untyped on purpose: Nitro's typed-route inference blows the TS stack on a generic url.
 const rawFetch = $fetch as unknown as (url: string, opts?: FetchOptions) => Promise<unknown>;

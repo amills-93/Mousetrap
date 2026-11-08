@@ -4,15 +4,13 @@
 import { z } from "zod";
 import { auth } from "../../lib/auth";
 import { readInput, requireSession } from "../../lib/session";
-import { isLocked, lockedError, recordStepUp } from "../../lib/trust";
+import { recordStepUp } from "../../lib/trust";
 
 const Input = z.object({ code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code") });
 
 export default defineEventHandler(async (event) => {
   const { user, session } = await requireSession(event);
   const { code } = await readInput(event, Input);
-  // A code must not unlock a denied session, nor feed its windows to ML as genuine (principle 5).
-  if (await isLocked(session.id)) throw lockedError();
   const ok = await auth.api
     .verifyTOTP({ body: { code }, headers: event.headers })
     .then(() => true)
