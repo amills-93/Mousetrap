@@ -125,6 +125,7 @@ Tasks
 - Write each window's feature vector to `models/{userId}/features.parquet`.
 - `/enroll` page: consent banner, typing passage, click-target game, progress bar to 40 windows.
 - Nuxt `/api/enroll/*` routes calling ML `/enroll/{userId}/start` and `/finish`.
+- Later replaced by passive enrollment (ARCHITECTURE.md 8.1): no `/enroll` page; enrollment starts on first use and trains itself.
 - `model.py`: scaler + IsolationForest, percentile calibration, joblib persistence, `meta.json`.
 - Update `BiometricProfile` status.
 
