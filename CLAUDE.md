@@ -31,6 +31,9 @@ Also: no real carrier branding, no real personal data (555 numbers, fake ICCIDs/
 - Regenerate Better Auth models after changing plugins: `cd apps/web && npx auth@1.7.18 generate --config server/lib/auth.ts --output prisma/schema.prisma --yes`, then add a migration
 - ML health: `docker compose exec web wget -qO- http://ml:8000/healthz`
 - ML tests: `docker compose run --rm -v ./services/ml/tests:/app/tests ml sh -c "pip install -q pytest httpx && pytest -q tests"`
+- Web unit tests (policy): `pnpm --filter web test`
+- Retrain all models from logged enrollment windows (after changing `model.py`): `docker compose exec ml python scripts/retrain.py`
+- Replay logged windows through a model and the EWMA: `docker compose exec ml python scripts/replay.py <modelUserId> <dataUserId> [enroll|live]`
 - Compare enrolled users' features: `docker compose exec ml python scripts/plot_features.py`, then `docker compose cp ml:/app/models/features.png .`
 
 ## Git workflow
