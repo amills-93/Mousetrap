@@ -403,6 +403,8 @@ ML_URL=http://ml:8000
 ML_INTERNAL_KEY=...
 POLICY_THRESHOLDS_JSON=
 DEMO_MODE=true          # enables DevOverlay (risk meter + telemetry) and /admin/risk
+DOMAIN=localhost        # Caddy hostname (deploy profile)
+TRUST_PROXY=false       # true behind Caddy: client IP from X-Forwarded-For
 ```
 
 ## 11. Seed data
@@ -417,7 +419,7 @@ Each teammate enrolls as one of these users before the demo.
 
 ## 12. Hosting and platform choices
 
-**Rule: everything runs from one `docker-compose.yml`.** Services: `postgres`, `web` (Nuxt, port 3000), `ml` (FastAPI, port 8000, internal only), plus `caddy` (port 443, automatic HTTPS, reverse proxy to `web`). Because the stack is portable, moving hosts is a `git pull && docker compose up -d`. Develop locally on laptops; deploy the same compose file to the demo host.
+**Rule: everything runs from one `docker-compose.yml`.** Services: `postgres`, `web` (Nuxt, port 3000), `ml` (FastAPI, port 8000, internal only), plus `caddy` (`deploy` profile; ports 80/443, automatic HTTPS for `$DOMAIN`, reverse proxy to `web`, overwrites `X-Forwarded-For`; `web` trusts it only with `TRUST_PROXY=true`). Postgres and web bind to 127.0.0.1 on the host, so on the VM only Caddy is reachable. `deploy/deploy.sh` does the rest. Because the stack is portable, moving hosts is a `git pull && docker compose up -d`. Develop locally on laptops; deploy the same compose file to the demo host.
 
 | Platform (credit) | Use | Notes |
 |---|---|---|
@@ -446,7 +448,7 @@ LLM_API_KEY=
 5. **Features + enrollment:** windowing, features, `/enroll` page, training, feature parquet logging.
 6. **Scoring + risk meter:** EWMA risk, `/api/risk`, risk meter section in the DevOverlay.
 7. **Policy + step-up:** `requireTrust`, StepUpModal, verify endpoint, session revoke, RiskEvent audit, `/admin/risk`.
-8. **Modularity proof:** vanilla adapter on a plain HTML page served from `public/` using the same backend.
+8. **Modularity proof:** vanilla adapter on a plain HTML page served from `public/` (`/demo-vanilla.html`) using the same backend; Nitro serves the built collector at `/collector/*`.
 9. **Polish + stretch:** bot heuristics, feedback retraining, threshold tuning via env, then optional embedding model.
 
 ## 14. Demo script (90 s)

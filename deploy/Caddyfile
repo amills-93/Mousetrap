@@ -1,0 +1,9 @@
+# HTTPS reverse proxy for the demo host (ARCHITECTURE.md 12). Caddy gets a certificate for $DOMAIN
+# automatically (ports 80 and 443 must be reachable). Use DOMAIN=localhost for a local self-signed test.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy web:3000 {
+		# Overwrite, never append, so clients cannot inject their own X-Forwarded-For.
+		header_up X-Forwarded-For {remote_host}
+	}
+}

@@ -20,11 +20,14 @@ Also: no real carrier branding, no real personal data (555 numbers, fake ICCIDs/
 - `apps/web` — Nuxt 3 + Tailwind + Prisma + Better Auth (pnpm workspace member)
 - `packages/collector` — zero-dependency TS collector SDK (pnpm workspace member)
 - `services/ml` — FastAPI + scikit-learn (Python 3.12; runs in Docker, local system Python may be older)
-- `docker-compose.yml` — postgres, web, ml (caddy added in Stage 8)
+- `docker-compose.yml` — postgres, web, ml, plus caddy under the `deploy` profile (`deploy/Caddyfile`)
+- `deploy/deploy.sh` — one-VM deploy: writes `.env` with fresh secrets on first run, `--profile deploy up`, seeds if empty
 
 ## Commands
 
 - Full stack: `cp .env.example .env && docker compose up --build`
+- Demo host: `DOMAIN=<host> ./deploy/deploy.sh` (local HTTPS check: `docker compose --profile deploy up -d caddy`, then `https://localhost`)
+- Vanilla adapter demo: `/demo-vanilla.html` (loads the built collector from `/collector/*`)
 - Web dev on host: `pnpm install && pnpm --filter web dev` (needs Postgres; `docker compose up postgres`)
 - Prisma: `pnpm --filter web prisma migrate dev` (host) — DATABASE_URL must point to `localhost:5432` when run outside Docker
 - Seed demo users (idempotent; prints TOTP QR codes): `docker compose run --rm seed`
