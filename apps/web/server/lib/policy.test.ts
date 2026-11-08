@@ -24,8 +24,15 @@ test("ML down or too few windows forces step-up on elevated/critical, never deny
   }
 });
 
-test("recent step-up allows everything, even at high risk", () => {
-  assert.equal(decide({ ...base, risk: 0.99, stepUpActive: true }, "critical"), "allow");
+test("recent step-up skips step-up but not deny", () => {
+  assert.equal(decide({ ...base, risk: 0.6, stepUpActive: true }, "critical"), "allow");
+  assert.equal(decide({ ...base, risk: 0.85, stepUpActive: true }, "critical"), "deny");
+  assert.equal(decide({ ...base, risk: 0.85, stepUpActive: true }, "elevated"), "allow");
+  assert.equal(decide({ ...base, windows: 0, stepUpActive: true }, "critical"), "allow"); // unknown risk never denies
+});
+
+test("no profile: recent step-up allows critical", () => {
+  assert.equal(decide({ ...base, profileActive: false, stepUpActive: true }, "critical"), "allow");
 });
 
 test("no active profile: step-up for critical only", () => {

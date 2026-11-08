@@ -7,7 +7,7 @@ import { decide, type Decision, type Tier, type TrustInput } from "./policy";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
 
-export const STEP_UP_TTL_MS = 5 * 60 * 1000;
+export const STEP_UP_TTL_MS = 60 * 1000; // short on purpose: long enough to retry the action, not to browse on
 export const MAX_STEP_UP_FAILURES = 3;
 
 export async function loadTrust(userId: string, sessionId: string): Promise<{ input: TrustInput; ml: MlRisk | null }> {
@@ -67,7 +67,7 @@ export async function requireTrust(event: H3Event, tier: Tier) {
   return auth;
 }
 
-// Record a step-up attempt. Success opens the 5 min window and tells ML the recent windows are genuine.
+// Record a step-up attempt. Success opens the 60 s window and tells ML the recent windows are genuine.
 export async function recordStepUp(userId: string, sessionId: string, ok: boolean) {
   if (ok) {
     const stepUpUntil = new Date(Date.now() + STEP_UP_TTL_MS);
