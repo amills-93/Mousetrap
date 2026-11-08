@@ -298,7 +298,7 @@ All seeded data is fictional: 555 phone numbers, fake account numbers, fake ICCI
 | `/login` | email + password, TOTP if prompted | n/a |
 | `/` (Overview) | balance due, lines summary, data usage bars | `view` |
 | `/lines` | per-line cards: plan, device, usage | `view` |
-| `/lines/:id` | rename line, change plan | `standard` |
+| `/lines/:id` | rename line (`standard`), change plan (`critical`) | `standard` / `critical` |
 | `/billing` | bill history, pay bill, toggle autopay | pay/autopay: `elevated` |
 | `/profile` | name, email, address | edit: `elevated` |
 | `/security` | change password, port-out PIN reveal, signed-in devices | `critical` |
@@ -374,7 +374,7 @@ Many carrier scams end with the real owner making the change: a caller posing as
 - `/messages` shows each verdict in words ("Scam very likely", "Be careful"), with the category, advice, and red flags. It also gives the percentage and says the filter can be wrong.
 - If ML is down, a message is delivered marked "not checked", never shown as "ok".
 - **Feeding the scam pause.** A recent `accountRisk` scam (fake carrier support, code theft, transfer-PIN request, SIM deactivation, bank alert) raises the coaching score, unless the customer marked it "not a scam". That ties the text to the account action it is setting up.
-- **Privacy.** Every message is synthetic. In a real deployment classification would run on the phone, and only the verdict and category, never the text, would reach the carrier. `/classify` scores a text and keeps nothing.
+- **Privacy.** Every message is synthetic. Classification runs in the ML service; `/classify` scores a text and keeps nothing. Stored messages hold the text and its verdict for the inbox.
 
 ## 8. ML service (services/ml)
 

@@ -48,7 +48,7 @@ async function simulate() {
   <div class="space-y-5">
     <PageHeader
       title="Messages"
-      subtitle="Nimbus Scam Shield checks incoming texts for scams. In this demo the texts are synthetic. On a real phone the check would run on the device and Nimbus would never see your messages."
+      subtitle="Nimbus Scam Shield checks incoming texts for scams. In this demo the texts are synthetic."
     />
 
     <Card v-if="demoMode" title="Demo: receive a text" subtitle="Type any message and see how Scam Shield screens it.">

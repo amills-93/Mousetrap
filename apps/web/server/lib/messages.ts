@@ -1,5 +1,4 @@
-// The customer's text inbox with scam verdicts (ARCHITECTURE.md 7.6). Every message is synthetic. A real
-// deployment would classify on the phone and send the carrier only the verdict, never the text.
+// The customer's text inbox with scam verdicts (ARCHITECTURE.md 7.6). Every message is synthetic.
 import { mlClassify } from "./ml";
 import { prisma } from "./prisma";
 
