@@ -83,5 +83,9 @@ async function submitTotp() {
 
       <p v-if="error" class="mt-4 text-sm text-red-600">{{ error }}</p>
     </div>
+    <p class="fixed bottom-3 inset-x-0 px-6 text-center text-xs text-gray-400">
+      Demo portal. To help protect your account, Nimbus looks at how you type and move (timing and motion only, never
+      what you type).
+    </p>
   </main>
 </template>
