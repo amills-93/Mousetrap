@@ -23,41 +23,51 @@ async function submit() {
 </script>
 
 <template>
-  <div v-if="data" class="space-y-6 max-w-2xl">
-    <div>
-      <NuxtLink to="/security" class="text-sm text-gray-500 hover:underline">← Security</NuxtLink>
-      <h1 class="text-2xl font-semibold text-nimbus mt-1">SIM swap / eSIM transfer</h1>
-      <p class="text-sm text-gray-500">The old SIM stops working as soon as the new one is active.</p>
+  <div v-if="data" class="max-w-3xl">
+    <PageHeader :back="{ to: '/security', label: 'Security' }" title="SIM swap / eSIM transfer" subtitle="The old SIM stops working as soon as the new one is active." />
+
+    <div class="notice mb-5 border border-amber-200 bg-amber-50 text-amber-900">
+      <Icon name="alert" :size="18" class="mt-px" />
+      <span>If someone on the phone asked you to do this, stop. Nimbus never asks customers to move their SIM.</span>
     </div>
 
     <Card>
-      <form class="space-y-4" @submit.prevent="submit">
-        <label class="block text-sm">Line
-          <select v-model="form.lineId" class="mt-1 w-full rounded border border-gray-300 px-3 py-2 bg-white">
+      <form class="space-y-6" @submit.prevent="submit">
+        <label class="label">Line
+          <select v-model="form.lineId" class="input">
             <option v-for="l in data.lines" :key="l.id" :value="l.id">{{ l.nickname }} · {{ l.phone }} · {{ l.deviceName }} (SIM ••{{ l.simIccidLast4 }})</option>
           </select>
         </label>
 
-        <fieldset class="text-sm">
-          <legend class="mb-1">New SIM type</legend>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2"><input v-model="form.kind" type="radio" value="esim" class="accent-nimbus" /> eSIM (new device)</label>
-            <label class="flex items-center gap-2"><input v-model="form.kind" type="radio" value="sim" class="accent-nimbus" /> Physical SIM card</label>
+        <fieldset>
+          <legend class="label mb-2">New SIM type</legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label
+              v-for="k in [{ v: 'esim', t: 'eSIM', d: 'Activate on a new device' }, { v: 'sim', t: 'Physical SIM card', d: 'Insert a new card' }]"
+              :key="k.v"
+              class="flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3.5 transition"
+              :class="form.kind === k.v ? 'border-nimbus bg-nimbus-50/60 shadow-focus' : 'border-ink-line hover:border-nimbus-200'"
+            >
+              <input v-model="form.kind" type="radio" :value="k.v" class="mt-1 h-4 w-4 accent-nimbus" />
+              <span><span class="block text-sm font-semibold">{{ k.t }}</span><span class="block text-xs text-ink-muted">{{ k.d }}</span></span>
+            </label>
           </div>
         </fieldset>
 
-        <label v-if="form.kind === 'sim'" class="block text-sm">SIM card number (ICCID)
-          <input v-model="form.iccid" inputmode="numeric" required placeholder="89…" class="mt-1 w-full rounded border border-gray-300 px-3 py-2 font-mono" />
+        <label v-if="form.kind === 'sim'" class="label">SIM card number (ICCID)
+          <input v-model="form.iccid" inputmode="numeric" required placeholder="89…" class="input font-mono" />
         </label>
 
-        <label class="block text-sm">New device name
-          <input v-model="form.deviceName" required maxlength="60" placeholder="e.g. Nimbus Phone 13" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
+        <label class="label">New device name
+          <input v-model="form.deviceName" required maxlength="60" placeholder="e.g. Nimbus Phone 13" class="input" />
         </label>
 
-        <button :disabled="busy" class="rounded bg-nimbus text-white px-4 py-2 text-sm font-medium disabled:opacity-50">
-          {{ form.kind === "esim" ? "Transfer to eSIM" : "Activate SIM" }}
-        </button>
-        <p v-if="msg" class="text-sm" :class="msg.ok ? 'text-green-700' : 'text-red-600'">{{ msg.text }}</p>
+        <div class="flex flex-wrap items-center gap-4 border-t border-ink-line pt-5">
+          <button :disabled="busy" class="btn-primary">
+            {{ busy ? "Working…" : form.kind === "esim" ? "Transfer to eSIM" : "Activate SIM" }}
+          </button>
+          <Notice :msg="msg" />
+        </div>
       </form>
     </Card>
   </div>
