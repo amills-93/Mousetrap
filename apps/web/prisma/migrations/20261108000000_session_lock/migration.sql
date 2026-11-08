@@ -1,0 +1,1 @@
+ALTER TABLE "SessionTrust" ADD COLUMN "lockedAt" TIMESTAMP(3);

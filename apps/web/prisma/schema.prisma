@@ -72,6 +72,7 @@ model SessionTrust {
   userId       String
   stepUpUntil  DateTime?
   failedStepUp Int       @default(0)
+  lockedAt     DateTime? // set on deny: no gated action succeeds in this session again
   updatedAt    DateTime  @updatedAt
 }
 
