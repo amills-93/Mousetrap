@@ -473,7 +473,7 @@ Log every feature vector to `models/{userId}/features.parquet` for debugging and
   | Rules-only baseline | 0.417 | | | |
 
   The model's ROC AUC is 0.996 and its category accuracy is 0.72. A random split scores 0.997, which shows how much seen templates inflate the number. The held-out figure is the one to quote.
-- **Limits.** Every message comes from our own templates, so real-world accuracy is unknown. The most-missed kinds are short, link-free openers (family emergency, wrong number). I looked at held-out errors twice while building this: once to add more varied legitimate messages and red-flag features, once to fix negated PIN warnings. So the held-out number is slightly optimistic.
+- **Limits.** Every message comes from our own templates, so real-world accuracy is unknown. The most-missed kinds are short, link-free openers (family emergency, wrong number). Held-out errors were looked at twice during development: once leading to more varied legitimate messages and red-flag features, once to fix negated PIN warnings. So the held-out number is slightly optimistic.
 
 ## 9. Security notes (demo scope)
 
