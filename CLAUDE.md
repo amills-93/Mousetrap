@@ -30,6 +30,8 @@ Also: no real carrier branding, no real personal data (555 numbers, fake ICCIDs/
 - Seed demo users (idempotent; prints TOTP QR codes): `docker compose run --rm seed`
 - Regenerate Better Auth models after changing plugins: `cd apps/web && npx auth@1.7.18 generate --config server/lib/auth.ts --output prisma/schema.prisma --yes`, then add a migration
 - ML health: `docker compose exec web wget -qO- http://ml:8000/healthz`
+- ML tests: `docker compose run --rm -v ./services/ml/tests:/app/tests ml sh -c "pip install -q pytest httpx && pytest -q tests"`
+- Compare enrolled users' features: `docker compose exec ml python scripts/plot_features.py`, then `docker compose cp ml:/app/models/features.png .`
 
 ## Git workflow
 

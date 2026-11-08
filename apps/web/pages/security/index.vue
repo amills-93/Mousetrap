@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { data: session } = await useAuthSession();
+const { data: biometric } = await useFetch("/api/enroll/status");
 
 // --- Change password
 const pw = reactive({ currentPassword: "", newPassword: "", revokeOtherSessions: true });
@@ -61,6 +62,14 @@ onMounted(loadSessions);
         <Card>
           <p class="font-medium">Authorized users →</p>
           <p class="text-sm text-gray-500 mt-1">People who can manage this account.</p>
+        </Card>
+      </NuxtLink>
+      <NuxtLink to="/enroll" class="block">
+        <Card>
+          <p class="font-medium">Behavioral security →</p>
+          <p class="text-sm text-gray-500 mt-1">
+            {{ biometric?.status === "active" ? "Active: sensitive actions check that it's really you." : "Not set up yet. Takes about a minute." }}
+          </p>
         </Card>
       </NuxtLink>
     </div>
