@@ -64,9 +64,15 @@ done
 
 # --- First deploy (later ones come from .github/workflows/deploy.yml) ---
 echo "Waiting for cloud-init, then running deploy.sh (first build takes several minutes)"
-az vm run-command invoke -g "$RG" -n "$VM" --command-id RunShellScript \
-  --scripts "cloud-init status --wait >/dev/null; cd /opt/mousetrap && DOMAIN=$DOMAIN ./deploy/deploy.sh > /root/first-deploy.log 2>&1; echo exit=\$?; grep -v '[▀▄█]' /root/first-deploy.log | tail -30" \
-  --query 'value[0].message' -o tsv
+# Outbound network can be down for the first minutes of boot, so Docker and the checkout are retried here too.
+out=$(az vm run-command invoke -g "$RG" -n "$VM" --command-id RunShellScript --query 'value[0].message' -o tsv \
+  --scripts "cloud-init status --wait >/dev/null
+    command -v docker >/dev/null || curl -fsSL --retry 10 --retry-all-errors https://get.docker.com | sh >/root/docker-install.log 2>&1
+    [ -d /opt/mousetrap/.git ] || git clone https://github.com/$REPO.git /opt/mousetrap
+    cd /opt/mousetrap && DOMAIN=$DOMAIN ./deploy/deploy.sh > /root/first-deploy.log 2>&1; echo exit=\$?
+    grep -v '[▀▄█]' /root/first-deploy.log | tail -30")
+echo "$out"
+grep -q 'exit=0' <<< "$out" || { echo "deploy.sh failed on the VM (log: /root/first-deploy.log)" >&2; exit 1; }
 # run-command returns only the last 4 KB, so the QR blocks are filtered out above; the otpauth:// URIs printed
 # with them work as manual-entry keys (or paste one into any QR generator). Full log: /root/first-deploy.log.
 

@@ -6,6 +6,7 @@ packages:
   - git
   - curl
 runcmd:
-  - curl -fsSL https://get.docker.com | sh
+  # Outbound network can lag on first boot; provision.sh retries both steps if they still fail here.
+  - curl -fsSL --retry 10 --retry-all-errors https://get.docker.com | sh
   - systemctl enable --now docker
   - git clone https://github.com/amills-93/Mousetrap.git /opt/mousetrap
