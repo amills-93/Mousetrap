@@ -1,5 +1,6 @@
 // Typed client for the internal ML service (ARCHITECTURE.md 8.1). Only Nuxt talks to it, with X-Internal-Key.
 import type { TelemetryBatch } from "@mousetrap-auth/collector";
+import type { CoachingSignals } from "./policy";
 
 function ml<T>(path: string, opts: { method?: "GET" | "POST"; body?: unknown; timeout?: number } = {}) {
   const { mlUrl, mlInternalKey } = useRuntimeConfig();
@@ -52,6 +53,7 @@ export interface MlRisk {
   lastUpdated: number | null; // unix seconds
   components: Partial<Record<"keys" | "mouse" | "touch", number>>;
   bot: number; // bot-heuristic penalty on the last window
+  coaching?: CoachingSignals; // counts from ML's coaching.py
 }
 
 // 300 ms budget (ARCHITECTURE.md 7.4 step 3): policy treats a slow ML the same as a down ML.

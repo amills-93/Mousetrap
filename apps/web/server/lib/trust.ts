@@ -1,34 +1,49 @@
-// Enforcement around the pure policy (ARCHITECTURE.md 5.2-5.4, 7.4): gathers decide()'s inputs, logs every
-// decision as a RiskEvent, revokes the session on deny, and tracks step-up state in SessionTrust.
+// Enforcement around the pure policy (ARCHITECTURE.md 5.2-5.4, 7.4, 7.5): gathers decide()'s inputs, logs every
+// decision as a RiskEvent, revokes the session on deny, holds paused actions, and tracks step-up state.
 import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
 import { mlChallengeResult, mlChallengeStart, mlFeedback, mlRisk, mlRiskClose, type MlRisk } from "./ml";
-import { MIN_WINDOWS, TYPING_ENFORCE, decide, judgeTyping, type Decision, type Tier, type TrustInput } from "./policy";
+import { MIN_WINDOWS, TYPING_ENFORCE, coachingScore, decide, judgeTyping, type Decision, type Tier, type TrustInput } from "./policy";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
 
 export const STEP_UP_TTL_MS = 60 * 1000; // short on purpose: long enough to retry the action, not to browse on
 export const MAX_STEP_UP_FAILURES = 3;
+// How long a paused action is held when the customer says they are doing it themselves. 24 h by default; the
+// demo can shorten it with PAUSE_HOLD_MS.
+export const pauseHoldMs = () => Number(process.env.PAUSE_HOLD_MS) || 24 * 60 * 60 * 1000;
+
+type Coaching = ReturnType<typeof coachingScore>;
 
 // closeWindow: have ML score the open window first (gated actions only; the overlay's polling must not).
-export async function loadTrust(userId: string, sessionId: string, closeWindow = false): Promise<{ input: TrustInput; ml: MlRisk | null }> {
+// sessionCreatedAt feeds the "straight here after signing in" coaching signal.
+export async function loadTrust(
+  userId: string,
+  sessionId: string,
+  { closeWindow = false, sessionCreatedAt }: { closeWindow?: boolean; sessionCreatedAt?: Date } = {},
+): Promise<{ input: TrustInput; ml: MlRisk | null; coaching: Coaching }> {
   const [ml, profile, trust] = await Promise.all([
     (closeWindow ? mlRiskClose(userId, sessionId) : mlRisk(sessionId)).catch(() => null),
     prisma.biometricProfile.findUnique({ where: { userId } }),
     prisma.sessionTrust.findUnique({ where: { sessionId } }),
   ]);
+  const ageMs = sessionCreatedAt ? Date.now() - new Date(sessionCreatedAt).getTime() : Infinity;
+  const coaching = coachingScore(ml?.coaching, ageMs);
   return {
     ml,
+    coaching,
     input: {
       risk: ml?.risk ?? null,
       windows: ml?.windows ?? 0,
       profileActive: profile?.status === "active",
       stepUpActive: !!trust?.stepUpUntil && trust.stepUpUntil > new Date(),
+      coaching: coaching.score,
+      holdReleased: false,
     },
   };
 }
 
-type EventType = Decision | "score" | "stepup_ok" | "stepup_failed" | "typing_ok" | "typing_failed";
+type EventType = Decision | "score" | "stepup_ok" | "stepup_failed" | "typing_ok" | "typing_failed" | "pause_reported" | "pause_held";
 
 export function logRiskEvent(e: { userId: string; sessionId: string; type: EventType; tier?: Tier; risk?: number | null; route?: string }) {
   return prisma.riskEvent
@@ -46,13 +61,30 @@ export async function revokeSession(sessionId: string) {
 const logout = (reason?: "stepup_failed", message = "Unauthorized") =>
   createError({ statusCode: 401, statusMessage: message, data: { action: "logout", reason } });
 
-// Gate a sensitive route. Returns the session on allow; throws 403 {action:"step_up"} or 401 {action:"logout"}.
+// Gate a sensitive route. Returns the session on allow; throws 403 {action:"step_up" | "pause"} or 401 {action:"logout"}.
 export async function requireTrust(event: H3Event, tier: Tier) {
   const auth = await requireSession(event);
   const { user, session } = auth;
-  const { input } = await loadTrust(user.id, session.id, true);
+  const route = event.path;
+  const [{ input, coaching }, released] = await Promise.all([
+    loadTrust(user.id, session.id, { closeWindow: true, sessionCreatedAt: session.createdAt }),
+    prisma.scamHold.findFirst({ where: { userId: user.id, route, status: "held", releaseAt: { lte: new Date() } } }),
+  ]);
+  input.holdReleased = !!released;
   const decision = decide(input, tier);
-  await logRiskEvent({ userId: user.id, sessionId: session.id, type: decision, tier, risk: input.risk, route: event.path });
+  await logRiskEvent({ userId: user.id, sessionId: session.id, type: decision, tier, risk: input.risk, route });
+
+  if (decision === "pause") {
+    // The reasons stay server-side: telling a scammer which signals fired would teach them what to avoid.
+    const hold = await prisma.scamHold.create({
+      data: { userId: user.id, sessionId: session.id, route, reasons: coaching.reasons.join("|") },
+    });
+    throw createError({
+      statusCode: 403,
+      statusMessage: "Paused for your protection",
+      data: { action: "pause", holdId: hold.id, holdMs: pauseHoldMs() },
+    });
+  }
 
   if (decision === "deny") {
     await revokeSession(session.id);
@@ -67,6 +99,7 @@ export async function requireTrust(event: H3Event, tier: Tier) {
       data: { action: "step_up", tier, challengeId: randomUUID() },
     });
   }
+  if (released) await prisma.scamHold.update({ where: { id: released.id }, data: { status: "used" } });
   return auth;
 }
 
