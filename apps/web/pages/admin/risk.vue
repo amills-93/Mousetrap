@@ -44,10 +44,11 @@ const DECISION = {
   deny: "bg-red-100 text-red-800",
   stepup_ok: "bg-sky-100 text-sky-800",
   stepup_failed: "bg-red-100 text-red-800",
+  typing_ok: "bg-sky-100 text-sky-800",
   typing_failed: "bg-red-100 text-red-800",
   score: "bg-gray-100 text-gray-600",
 } as Record<string, string>;
-const LABEL: Record<string, string> = { allow: "allow", step_up: "step-up", deny: "deny", stepup_ok: "verified", stepup_failed: "wrong code", typing_failed: "typing mismatch", score: "score" };
+const LABEL: Record<string, string> = { allow: "allow", step_up: "step-up", deny: "deny", stepup_ok: "verified", stepup_failed: "wrong code", typing_ok: "typing ok", typing_failed: "typing mismatch", score: "score" };
 
 const riskClass = (r: number | null) => {
   const t = data.value?.critical;

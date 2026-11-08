@@ -68,6 +68,10 @@ export function decide(input: TrustInput, tier: Tier, t: Thresholds = thresholds
 
 // Step-up typing challenge (ARCHITECTURE.md 5.3b). Mean keys risk of the phrase windows at or above this fails.
 export const TYPING_MAX_RISK = 0.5;
+// Log-only for now: on the Stage 5 data the free-text keys model fails the owner's own live typing 43-60% of the
+// time at 0.5 and does not separate a second person, so a "fail" is recorded but changes nothing, and a "pass"
+// earns no trust. Flip this once a phrase-specific model separates people.
+export const TYPING_ENFORCE = false;
 
 export interface TypingResult {
   keysModeled: boolean;

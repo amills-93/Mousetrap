@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
 import { mlChallengeResult, mlChallengeStart, mlFeedback, mlRisk, mlRiskClose, type MlRisk } from "./ml";
-import { MIN_WINDOWS, decide, judgeTyping, type Decision, type Tier, type TrustInput } from "./policy";
+import { MIN_WINDOWS, TYPING_ENFORCE, decide, judgeTyping, type Decision, type Tier, type TrustInput } from "./policy";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
 
@@ -28,7 +28,7 @@ export async function loadTrust(userId: string, sessionId: string, closeWindow =
   };
 }
 
-type EventType = Decision | "score" | "stepup_ok" | "stepup_failed" | "typing_failed";
+type EventType = Decision | "score" | "stepup_ok" | "stepup_failed" | "typing_ok" | "typing_failed";
 
 export function logRiskEvent(e: { userId: string; sessionId: string; type: EventType; tier?: Tier; risk?: number | null; route?: string }) {
   return prisma.riskEvent
@@ -70,20 +70,22 @@ export async function requireTrust(event: H3Event, tier: Tier) {
   return auth;
 }
 
-// Judge the step-up phrase typing before the code (ARCHITECTURE.md 5.3b). Foreign typing revokes the session
-// silently, like a deny. Returns whether the typing passed, which also lets the step-up teach ML.
+// Judge the step-up phrase typing before the code (ARCHITECTURE.md 5.3b) and log the result. With TYPING_ENFORCE,
+// foreign typing revokes the session silently, like a deny, and a pass lets the step-up teach ML.
 export async function checkStepUpTyping(userId: string, sessionId: string): Promise<boolean> {
   const result = await mlChallengeResult(userId, sessionId).catch(() => null);
   const verdict = judgeTyping(result);
   if (verdict === "retry") {
     throw createError({ statusCode: 400, statusMessage: "Type the phrase shown above, then enter your code.", data: { action: "type_phrase" } });
   }
+  if (verdict === "skip") return false;
+  await logRiskEvent({ userId, sessionId, type: verdict === "pass" ? "typing_ok" : "typing_failed", risk: result?.risk ?? null });
+  if (!TYPING_ENFORCE) return false;
   if (verdict === "fail") {
-    await logRiskEvent({ userId, sessionId, type: "typing_failed", risk: result?.risk ?? null });
     await revokeSession(sessionId);
     throw logout();
   }
-  return verdict === "pass";
+  return true;
 }
 
 // Record a step-up attempt. Success opens the 60 s window and, when ML had already scored the session, tells it
