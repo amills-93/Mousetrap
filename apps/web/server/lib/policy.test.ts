@@ -89,3 +89,10 @@ test("pause: critical only, needs no profile, beats a recent step-up, loses to d
   assert.equal(decide({ ...coached, holdReleased: true }, "critical"), "allow");
   assert.equal(decide({ ...base, coaching: 0.45 }, "critical"), "allow");
 });
+
+test("coaching score: a recent account-scam text adds 0.3 and counts even without ML", () => {
+  assert.deepEqual(coachingScore(null, OLD, true), { score: 0.3, reasons: ["received a likely scam text in the last 24 h"] });
+  const both = coachingScore({ ...quiet, tabSwitches: 1 }, OLD, true);
+  assert.equal(both.score, 0.6);
+  assert.equal(decide({ ...base, coaching: both.score }, "critical"), "pause");
+});
