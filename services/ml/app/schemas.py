@@ -83,6 +83,11 @@ class IngestRequest(BaseModel):
     batch: TelemetryBatch
 
 
+class CloseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    userId: Annotated[str, Field(min_length=1)]
+
+
 class IngestResponse(BaseModel):
     ok: bool
     buffered: int  # raw events held for this session

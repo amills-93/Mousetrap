@@ -48,6 +48,15 @@ def get(session_id: str) -> SessionBuffer | None:
 
 
 
+def drain(user_id: str, session_id: str) -> list[Window]:
+    """Close this session's open window (a sensitive action is about to be judged on it)."""
+    with _lock:
+        buf = _sessions.get(session_id)
+        if buf is None or buf.user_id != user_id:
+            return []
+        return buf.windower.drain()
+
+
 def drain_user(user_id: str) -> list[Window]:
     """Close the open window of every session belonging to this user (used at enrollment finish)."""
     with _lock:

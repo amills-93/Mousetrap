@@ -128,3 +128,21 @@ def test_reenroll_bumps_version_and_scores(client):
     risks = [model.window_risk("u1", r) for r in rows]
     assert all(0 <= v <= 1 for r in risks for v in r.values())
     assert model.window_risk("nobody", rows[0]) is None
+
+
+def test_close_scores_the_open_window(client):
+    client.post("/enroll/u1/start", headers=H)
+    _, t = feed(client, "u1", "s0", 10)
+    assert client.post("/enroll/u1/finish", headers=H).json()["ok"]
+
+    page = str(uuid.uuid4())
+    k, t = typing(t, n=10)  # 20 events in under 5 s: enough for a window, too few to close it
+    r = client.post("/ingest", headers=H, json={"userId": "u1", "sessionId": "s1", "batch": batch(page, 1, k)}).json()
+    assert r["windows"] == 0
+    assert client.get("/risk/s1", headers=H).json()["windows"] == 0
+
+    r = client.post("/risk/s1/close", headers=H, json={"userId": "u1"})
+    assert r.status_code == 200, r.text
+    assert r.json()["windows"] == 1
+    # Another user's id cannot drain or score this session.
+    assert client.post("/risk/s1/close", headers=H, json={"userId": "u2"}).json()["windows"] == 1
