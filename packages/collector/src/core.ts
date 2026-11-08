@@ -204,8 +204,25 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
     if (!trusted(e)) return;
     push({ k: "fc", t: now(), role: focusRole(e.target) });
   };
+  // Leaving the page (tab switch, another app) and coming back. Window blur covers alt-tab on desktop, where the
+  // page stays visible; element blurs also reach this capture listener, so only the window itself counts.
+  let away = false;
+  const setAway = (hidden: boolean) => {
+    if (hidden === away) return;
+    away = hidden;
+    push({ k: "vs", t: now(), hidden });
+  };
   const onHidden = () => {
+    setAway(document.visibilityState === "hidden");
     if (document.visibilityState === "hidden") beacon();
+  };
+  const onWindowFocus = (e: Event) => {
+    if (e.target === window) setAway(e.type === "blur");
+  };
+  // Only that a paste happened and into what kind of element. clipboardData is never read.
+  const onPaste = (e: ClipboardEvent) => {
+    if (!trusted(e)) return;
+    push({ k: "ps", t: now(), role: focusRole(e.target) });
   };
 
   const listeners: [EventTarget, string, EventListener][] = [
@@ -220,6 +237,9 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
     [window, "touchcancel", onTouch as EventListener],
     [window, "wheel", onWheel as EventListener],
     [window, "focusin", onFocus as EventListener],
+    [window, "paste", onPaste as EventListener],
+    [window, "blur", onWindowFocus],
+    [window, "focus", onWindowFocus],
     [window, "pagehide", beacon],
     [document, "visibilitychange", onHidden],
   ];

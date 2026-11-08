@@ -14,7 +14,9 @@ export type CollectorEvent =
   | { k: "tm"; t: number; id: number; x: number; y: number; r: number; f: number } // touchmove, throttled per touch
   | { k: "te"; t: number; id: number; x: number; y: number; r: number; f: number } // touchend / touchcancel
   | { k: "fc"; t: number; role: string } // focus change: element role/type, never value
-  | { k: "nv"; t: number; route: string }; // route change
+  | { k: "nv"; t: number; route: string } // route change
+  | { k: "ps"; t: number; role: string } // paste happened: target element role/type only, never the pasted text
+  | { k: "vs"; t: number; hidden: boolean }; // page hidden/shown or window blurred/focused (left for another app)
 
 export interface TelemetryBatch {
   v: 1;
