@@ -25,7 +25,7 @@ Mousetrap is a behavioral-biometric layer that sits in front of sensitive action
 
 ## Challenges we ran into
 - **Calibration.** Mapping risk as "1 − percentile" makes the genuine user's own windows uniform on 0–1, with a mean of 0.5, which is above the step-up threshold. We changed the mapping so a typical genuine window scores 0 and risk rises only below the user's 25th percentile.
-- **Enrollment ≠ browsing.** Mouse speed and acceleration from the enrollment click game didn't carry over to normal browsing. The owner's own browsing looked anomalous. We split the model per modality, dropped task-dependent mouse features, and treat mouse as weak evidence. On our data, keystroke timing separates people best.
+- **Enrollment ≠ browsing.** Mouse speed and acceleration from the enrollment click game didn't carry over to normal browsing. The owner's own browsing looked anomalous. We split the model per modality, dropped task-dependent mouse features, and treat mouse as weak evidence. On our data, keystroke timing separates people best. That is also why enrollment is now passive: the template is learned from the first few minutes of normal portal use, with no exercise and nothing shown to the user.
 - Keeping trust decisions entirely server-side, while still showing a live meter that can't drift from enforcement.
 
 ## Accomplishments we're proud of
@@ -37,7 +37,6 @@ Mousetrap is a behavioral-biometric layer that sits in front of sensitive action
 Behavioral signals are strong for typing and weak for casual mouse use unless enrollment looks like real use. Calibration matters as much as the model. "Unknown" has to mean "verify", never "allow".
 
 ## What's next
-- Enroll passively from verified sessions instead of a dedicated exercise.
 - A global embedding model (sequence model with triplet loss) scored against per-user templates, behind the same `/risk` contract.
 - A React adapter, and a one-sentence "why was this flagged" explanation for support agents.
 
@@ -51,4 +50,4 @@ TypeScript, Nuxt 3, Vue, Tailwind CSS, Prisma, PostgreSQL, Better Auth, Python, 
 1. **Problem.** A stolen password gets an attacker a fully trusted session. On a carrier portal, one SIM swap hands over every account tied to that number.
 2. **How it works.** Collector (timing and motion only) → per-user model → session risk → server policy per action tier → allow / TOTP step-up / sign out. One diagram: browser → Nuxt `/api/telemetry` → ML; sensitive route → `requireTrust` → decision.
 3. **Demo** (live, 90 s, ARCHITECTURE.md §14). The owner browses (green) → a second person takes over (meter climbs) → SIM swap asks for TOTP → wrong codes sign them out → `/admin/risk` timeline → vanilla page, same protection.
-4. **What's next.** Passive enrollment, a global embedding model, more adapters. Privacy stance: never key values, and templates update only after verified step-up.
+4. **What's next.** A global embedding model, more adapters. Privacy stance: never key values, and templates update only after verified step-up.

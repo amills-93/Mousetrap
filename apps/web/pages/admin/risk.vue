@@ -108,7 +108,7 @@ const MARK_FILL: Record<string, string> = { allow: "#10b981", step_up: "#f59e0b"
               @click="selected = s.id"
             >
               <td class="py-1.5 pr-3 font-mono text-xs">{{ s.id }}</td>
-              <td class="py-1.5 pr-3">{{ s.email }}<span v-if="!s.profileActive" class="ml-1 text-xs text-gray-400">(not enrolled)</span></td>
+              <td class="py-1.5 pr-3">{{ s.email }}<span v-if="!s.profileActive" class="ml-1 text-xs text-gray-400">(learning)</span></td>
               <td class="py-1.5 pr-3 text-gray-500">{{ browser(s.userAgent) }}</td>
               <td class="py-1.5 pr-3 text-right font-mono font-semibold" :class="riskClass(s.risk)">{{ s.risk?.toFixed(2) ?? "—" }}</td>
               <td class="py-1.5 pr-3 text-right font-mono">{{ s.windows }}</td>
