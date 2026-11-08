@@ -1,4 +1,4 @@
-const PUBLIC_ROUTES = new Set(["/login"]);
+const PUBLIC_ROUTES = new Set(["/login", "/signup"]);
 
 export default defineNuxtRouteMiddleware(async (to) => {
   if (PUBLIC_ROUTES.has(to.path)) return;

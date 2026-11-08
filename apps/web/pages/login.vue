@@ -33,7 +33,9 @@ async function submitPassword() {
     step.value = "totp";
     return;
   }
-  reloadTo(redirectTo.value);
+  // Only a login without an authenticator signs in here; that is an unfinished sign-up, so resume it.
+  const status = await $fetch("/api/signup/status").catch(() => null);
+  reloadTo(status && !status.complete ? "/signup" : redirectTo.value);
 }
 
 async function submitTotp() {
@@ -77,7 +79,8 @@ async function submitTotp() {
               <NuxtLink to="/" class="link">go back to the portal</NuxtLink>.
             </p>
             <p v-else class="mt-2 text-sm text-ink-muted">
-              {{ step === "password" ? "Welcome back. Use the email on your account." : "Enter the 6-digit code from your authenticator app." }}
+              <template v-if="step === 'password'">Welcome back. New to Nimbus? <NuxtLink to="/signup" class="link">Create an account</NuxtLink></template>
+              <template v-else>Enter the 6-digit code from your authenticator app.</template>
             </p>
 
             <p v-if="signedOutReason" class="notice-err mt-5" role="alert"><Icon name="alert" :size="18" class="mt-px" />{{ signedOutReason }}</p>
