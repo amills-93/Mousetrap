@@ -5,7 +5,8 @@ browsing window with no typing is never compared against imputed typing features
 features only: speed, acceleration and scroll depend on the task (click-target game vs. browsing) more than on
 the person, and on the Stage 5 data they flagged the owner's own browsing.
 
-Files under MODELS_DIR/{userId}/: model.joblib, meta.json, features.parquet (every window, for debugging/plots).
+Files under MODELS_DIR/{userId}/: model.joblib, meta.json, training.parquet (the windows the current model was fit
+on), features.parquet (every window, for debugging/plots).
 """
 
 import json
@@ -18,6 +19,7 @@ from threading import Lock
 
 import joblib
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
@@ -26,6 +28,7 @@ from .features import KEY_FEATURES, TOUCH_FEATURES
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", Path(__file__).resolve().parent.parent / "models"))
 MIN_WINDOWS = 20  # total enrollment windows
 MIN_MODALITY_WINDOWS = 8  # a modality with fewer enrollment windows is not scored for this user
+MAX_TRAINING_WINDOWS = 300  # feedback retraining keeps the most recent windows
 FORMAT = 2
 
 MOUSE_MODEL_FEATURES = [
@@ -93,11 +96,25 @@ def train(user_id: str, rows: list[dict[str, float]]) -> dict:
     d = user_dir(user_id)
     d.mkdir(parents=True, exist_ok=True)
     bundle = {"format": FORMAT, "modalities": mods}
+    pd.DataFrame(rows).to_parquet(d / "training.parquet", index=False)
     joblib.dump(bundle, d / "model.joblib")
     (d / "meta.json").write_text(json.dumps(info, indent=2))
     with _lock:
         _cache[user_id] = (info["version"], bundle)
     return info
+
+
+def training_rows(user_id: str) -> list[dict[str, float]]:
+    path = user_dir(user_id) / "training.parquet"
+    return pd.read_parquet(path).to_dict("records") if path.exists() else []
+
+
+def retrain_with(user_id: str, new_rows: list[dict[str, float]]) -> dict | None:
+    """Append verified-genuine windows to the training set and refit (feedback after step-up, principle 5)."""
+    base = training_rows(user_id)
+    if not base:
+        return None  # never enrolled: feedback must not create a template
+    return train(user_id, (base + new_rows)[-MAX_TRAINING_WINDOWS:])
 
 
 def _load(user_id: str) -> dict | None:

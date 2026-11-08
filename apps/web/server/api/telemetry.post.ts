@@ -3,6 +3,11 @@
 import { requireSession } from "../lib/session";
 import { TelemetryBatch, acceptSeq, allowRequest } from "../lib/telemetry";
 import { mlIngest } from "../lib/ml";
+import { logRiskEvent } from "../lib/trust";
+
+// One "score" RiskEvent per session every SCORE_EVERY_MS feeds the /admin/risk timeline.
+const SCORE_EVERY_MS = 5000;
+const lastScore = new Map<string, number>();
 
 const MAX_BODY = 256 * 1024;
 
@@ -35,7 +40,13 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const { buffered } = await mlIngest({ userId: user.id, sessionId: session.id, batch });
+    const { buffered, risk } = await mlIngest({ userId: user.id, sessionId: session.id, batch });
+    const now = Date.now();
+    if (risk != null && now - (lastScore.get(session.id) ?? 0) >= SCORE_EVERY_MS) {
+      if (lastScore.size > 5000) lastScore.clear();
+      lastScore.set(session.id, now);
+      void logRiskEvent({ userId: user.id, sessionId: session.id, type: "score", risk });
+    }
     return { buffered }; // events held for this session at ML; shown by the dev overlay
   } catch (err) {
     console.error("[telemetry] ML ingest failed:", (err as Error).message);

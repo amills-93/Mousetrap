@@ -3,6 +3,7 @@ import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "../../../lib/prisma";
 import { requireAccount, readInput } from "../../../lib/session";
+import { requireTrust } from "../../../lib/trust";
 
 const Input = z.discriminatedUnion("kind", [
   z.object({
@@ -22,8 +23,8 @@ const Input = z.discriminatedUnion("kind", [
 const fakeEsimIccid = () => "8999" + Array.from({ length: 15 }, () => randomInt(10)).join("");
 
 export default defineEventHandler(async (event) => {
+  await requireTrust(event, "critical");
   const { account } = await requireAccount(event);
-  // TODO(Stage 7): await requireTrust(event, "critical");
   const input = await readInput(event, Input);
 
   const simIccid = input.kind === "sim" ? input.iccid : fakeEsimIccid();

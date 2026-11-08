@@ -39,8 +39,8 @@ onBeforeUnmount(() => clearInterval(poll));
 const phase = computed(() => {
   const s = status.value;
   if (!s) return "loading";
-  if (s.status === "active") return "done";
-  return s.enrolling ? "collecting" : "consent";
+  if (s.enrolling) return "collecting";
+  return s.status === "active" ? "done" : "consent";
 });
 const pct = computed(() => (status.value ? Math.min(100, (status.value.windows / status.value.target) * 100) : 0));
 const canFinish = computed(() => !!status.value && status.value.windows >= status.value.min);
@@ -49,7 +49,7 @@ async function start() {
   busy.value = true;
   error.value = "";
   try {
-    await $fetch("/api/enroll/start", { method: "POST" });
+    await trustedFetch("/api/enroll/start", { method: "POST" }); // re-enrolling needs step-up (principle 5)
     await load();
   } catch (e: any) {
     error.value = e?.data?.statusMessage || "Could not start enrollment";
@@ -64,7 +64,7 @@ async function finish() {
   try {
     $collector.flush(); // send the last few seconds before training
     await new Promise((r) => setTimeout(r, 1000));
-    await $fetch("/api/enroll/finish", { method: "POST" });
+    await trustedFetch("/api/enroll/finish", { method: "POST" });
     await load();
   } catch (e: any) {
     error.value = e?.data?.statusMessage || "Could not finish enrollment";
@@ -105,7 +105,11 @@ function hit() {
         Your behavioral profile is active (model v{{ status!.modelVersion }}, trained on {{ status!.windowCount }} samples).
         Sensitive actions now check that it's really you at the keyboard.
       </p>
-      <NuxtLink to="/" class="mt-4 inline-block rounded bg-nimbus text-white px-4 py-2 text-sm font-medium">Back to overview</NuxtLink>
+      <div class="mt-4 flex items-center gap-3">
+        <NuxtLink to="/" class="inline-block rounded bg-nimbus text-white px-4 py-2 text-sm font-medium">Back to overview</NuxtLink>
+        <button :disabled="busy" class="text-sm text-nimbus underline disabled:opacity-50" @click="start">Re-enroll (requires verification)</button>
+      </div>
+      <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
     </Card>
 
     <Card v-else-if="phase === 'consent'" title="Before you start">

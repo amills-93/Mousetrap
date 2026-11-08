@@ -12,7 +12,7 @@ function ml<T>(path: string, opts: { method?: "GET" | "POST"; body?: unknown; ti
 }
 
 export const mlIngest = (body: { userId: string; sessionId: string; batch: TelemetryBatch }) =>
-  ml<{ ok: boolean; buffered: number }>("/ingest", { method: "POST", body });
+  ml<{ ok: boolean; buffered: number; risk?: number | null; scoredWindows?: number | null }>("/ingest", { method: "POST", body });
 
 export interface MlUserStatus {
   enrolled: boolean;
@@ -44,3 +44,7 @@ export interface MlRisk {
 // 300 ms budget (ARCHITECTURE.md 7.4 step 3): policy treats a slow ML the same as a down ML.
 export const mlRisk = (sessionId: string) =>
   ml<MlRisk>(`/risk/${encodeURIComponent(sessionId)}`, { timeout: 300 });
+
+// After a successful step-up only (principle 5): ML adds the session's recent windows and retrains.
+export const mlFeedback = (body: { userId: string; sessionId: string; label: "genuine" }) =>
+  ml<{ ok: boolean; windows: number }>("/feedback", { method: "POST", body });

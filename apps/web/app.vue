@@ -7,6 +7,7 @@ const { demoMode } = useRuntimeConfig().public;
     <NuxtPage />
   </NuxtLayout>
   <ClientOnly>
+    <StepUpModal />
     <DevOverlay v-if="demoMode" />
   </ClientOnly>
 </template>
