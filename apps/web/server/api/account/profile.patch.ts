@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { prisma } from "../../lib/prisma";
 import { requireAccount, readInput } from "../../lib/session";
+import { requireTrust } from "../../lib/trust";
 
 const Input = z.object({
   name: z.string().trim().min(1, "Name is required").max(80),
@@ -13,8 +14,8 @@ const Input = z.object({
 });
 
 export default defineEventHandler(async (event) => {
+  await requireTrust(event, "elevated");
   const { session, account } = await requireAccount(event);
-  // TODO(Stage 7): await requireTrust(event, "elevated");
   const { name, email, ...address } = await readInput(event, Input);
 
   if (email !== session.user.email) {

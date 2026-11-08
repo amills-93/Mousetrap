@@ -20,7 +20,8 @@ let cached: { raw: string; thresholds: Thresholds } | undefined;
 
 // POLICY_THRESHOLDS_JSON overrides any subset, e.g. {"critical":{"stepUp":0.3}}. Invalid JSON is ignored.
 export function thresholds(raw = process.env.POLICY_THRESHOLDS_JSON ?? ""): Thresholds {
-  if (cached?.raw === raw) return cached.thresholds;
+  const hit = cached;
+  if (hit && hit.raw === raw) return hit.thresholds;
   const out = structuredClone(DEFAULT_THRESHOLDS);
   if (raw.trim()) {
     try {

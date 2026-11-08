@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { prisma } from "../../../lib/prisma";
 import { requireAccount, readInput } from "../../../lib/session";
+import { requireTrust } from "../../../lib/trust";
 import { PLAN_NAMES } from "../../../lib/plans";
 
 const Input = z
@@ -12,8 +13,8 @@ const Input = z
   .refine((v) => v.nickname !== undefined || v.plan !== undefined, "Nothing to update");
 
 export default defineEventHandler(async (event) => {
+  await requireTrust(event, "standard");
   const { account } = await requireAccount(event);
-  // TODO(Stage 7): await requireTrust(event, "standard");
   const input = await readInput(event, Input);
 
   const id = getRouterParam(event, "id")!;

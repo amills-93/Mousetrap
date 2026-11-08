@@ -2,12 +2,13 @@
 import { z } from "zod";
 import { prisma } from "../../../lib/prisma";
 import { requireAccount, readInput } from "../../../lib/session";
+import { requireTrust } from "../../../lib/trust";
 
 const Input = z.object({ billId: z.string().min(1) });
 
 export default defineEventHandler(async (event) => {
+  await requireTrust(event, "elevated");
   const { account } = await requireAccount(event);
-  // TODO(Stage 7): await requireTrust(event, "elevated");
   const { billId } = await readInput(event, Input);
 
   const { count } = await prisma.bill.updateMany({ where: { id: billId, accountId: account.id, paid: false }, data: { paid: true } });

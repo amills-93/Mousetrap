@@ -2,12 +2,13 @@
 import { z } from "zod";
 import { prisma } from "../../../lib/prisma";
 import { requireAccount, readInput } from "../../../lib/session";
+import { requireTrust } from "../../../lib/trust";
 
 const Input = z.object({ enabled: z.boolean() });
 
 export default defineEventHandler(async (event) => {
+  await requireTrust(event, "elevated");
   const { account } = await requireAccount(event);
-  // TODO(Stage 7): await requireTrust(event, "elevated");
   const { enabled } = await readInput(event, Input);
 
   await prisma.customerAccount.update({ where: { id: account.id }, data: { autopay: enabled } });

@@ -1,7 +1,8 @@
 // Change password through Better Auth (verifies the current password). Tier: critical.
 import { z } from "zod";
 import { auth } from "../../../lib/auth";
-import { requireSession, readInput } from "../../../lib/session";
+import { readInput } from "../../../lib/session";
+import { requireTrust } from "../../../lib/trust";
 
 const Input = z.object({
   currentPassword: z.string().min(1, "Enter your current password"),
@@ -10,8 +11,7 @@ const Input = z.object({
 });
 
 export default defineEventHandler(async (event) => {
-  await requireSession(event);
-  // TODO(Stage 7): await requireTrust(event, "critical");
+  await requireTrust(event, "critical");
   const body = await readInput(event, Input);
 
   try {
