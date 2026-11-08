@@ -54,13 +54,23 @@ class FocusEvent(_Event):
     role: Annotated[str, Field(max_length=40)]
 
 
+class PasteEvent(_Event):
+    k: Literal["ps"]
+    role: Annotated[str, Field(max_length=40)]
+
+
+class VisibilityEvent(_Event):
+    k: Literal["vs"]
+    hidden: bool
+
+
 class NavEvent(_Event):
     k: Literal["nv"]
     route: Annotated[str, Field(max_length=200)]
 
 
 CollectorEvent = Annotated[
-    Union[KeyEvent, MoveEvent, ButtonEvent, WheelEvent, TouchEvent, FocusEvent, NavEvent],
+    Union[KeyEvent, MoveEvent, ButtonEvent, WheelEvent, TouchEvent, FocusEvent, NavEvent, PasteEvent, VisibilityEvent],
     Field(discriminator="k"),
 ]
 
@@ -83,10 +93,18 @@ class IngestRequest(BaseModel):
     batch: TelemetryBatch
 
 
+class CloseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    userId: Annotated[str, Field(min_length=1)]
+
+
 class IngestResponse(BaseModel):
     ok: bool
     buffered: int  # raw events held for this session
     windows: int  # windows completed by this batch
+    enrolled: bool = False  # the user has a trained model
+    enrolling: bool = False  # windows go to the enrollment buffer instead of scoring
+    enrollReady: bool = False  # enough enrollment windows to train; Nuxt calls /enroll/{id}/finish
     enrollWindows: int | None = None  # enrollment progress, when the user is enrolling
     risk: float | None = None  # session risk after this batch, when live-scored
     scoredWindows: int | None = None
@@ -103,6 +121,9 @@ class UserStatus(BaseModel):
     enrolled: bool
     enrolling: bool
     enrollWindows: int  # windows collected in the current enrollment
+    enrollKeyWindows: int  # of those, windows with typing
+    enrollTarget: int  # enrollWindows needed before training
+    enrollKeyTarget: int  # enrollKeyWindows needed before training
     windowCount: int  # windows the current model was trained on
     modelVersion: int
 
@@ -113,6 +134,36 @@ class RiskResponse(BaseModel):
     lastUpdated: float | None  # unix seconds of the last scored window
     components: dict[str, float]  # per-modality EWMA: keys, mouse, touch (only those seen)
     bot: float = 0.0  # bot-heuristic penalty on the last window
+    # coaching.py counts: pastes, tabSwitches, longPauses, chunkedDigits (last 3 min) and navs (this session)
+    coaching: dict[str, int] = {}
+
+
+class ChallengeResponse(BaseModel):
+    keysModeled: bool  # the user has a keystroke model; False means the challenge cannot judge anything
+    started: bool  # a challenge was already running (False: this call just started one)
+    windows: int  # keystroke windows scored since it started
+    risk: float | None  # mean keys risk of those windows (bot penalty included); None when windows == 0
+
+
+class ClassifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: Annotated[str, Field(min_length=1, max_length=2000)]
+
+
+class RedFlag(BaseModel):
+    id: str
+    label: str
+
+
+class ClassifyResponse(BaseModel):
+    verdict: Literal["scam", "suspicious", "ok"]
+    scamProbability: float
+    category: str | None  # taxonomy id, when verdict != "ok"
+    categoryLabel: str | None
+    categoryProbability: float | None
+    advice: str | None  # customer-facing, from the taxonomy
+    accountRisk: bool  # a scam of a kind that ends in an account action (raises the coaching score)
+    redFlags: list[RedFlag]
 
 
 class FeedbackRequest(BaseModel):

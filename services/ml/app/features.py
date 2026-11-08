@@ -69,8 +69,8 @@ def normalize(events, vw: int, vh: int) -> list[Ev]:
     for e in events:
         d = e.model_dump()
         k = d.pop("k")
-        if k in ("fc", "nv"):
-            continue  # focus/route changes carry no timing signal we model
+        if k in ("fc", "nv", "ps", "vs"):
+            continue  # focus/route/paste/visibility carry no timing signal we model (coaching.py reads them)
         if "x" in d:
             d["x"] /= scale
             d["y"] /= scale

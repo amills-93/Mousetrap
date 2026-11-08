@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "note": "Scam taxonomy for the synthetic message set (ARCHITECTURE.md 8.7). Fictional carrier 'Nimbus'. accountRisk: a recent message of this kind raises the risk on critical account actions (port-out PIN, SIM change), because these scams end with one.",
+  "categories": [
+    {
+      "id": "carrier_impersonation",
+      "label": "Fake carrier support",
+      "description": "Poses as Nimbus support or security and asks the customer to call back, confirm details, or follow instructions.",
+      "redFlags": ["claims to be the carrier", "urgency", "asks you to call a number in the message"],
+      "advice": "Nimbus never texts asking you to call a number or share details. Use the number on your bill or the Nimbus app.",
+      "accountRisk": true
+    },
+    {
+      "id": "otp_theft",
+      "label": "Code theft",
+      "description": "Asks the customer to send back a verification code they just received, usually framed as cancelling or confirming a request.",
+      "redFlags": ["asks for a verification code", "says the code cancels something"],
+      "advice": "A code is only for you to type in yourself. Anyone asking you to read or send it is trying to get into your account.",
+      "accountRisk": true
+    },
+    {
+      "id": "port_out_pin",
+      "label": "Transfer PIN request",
+      "description": "Asks for the number-transfer (port-out) PIN or to generate one, so the number can be moved to another carrier.",
+      "redFlags": ["asks for a transfer or port-out PIN", "claims an upgrade or migration needs it"],
+      "advice": "Your transfer PIN is only needed when you move your number yourself. Never read it to anyone.",
+      "accountRisk": true
+    },
+    {
+      "id": "sim_deactivation",
+      "label": "SIM deactivation threat",
+      "description": "Claims the SIM or line will be suspended unless the customer verifies at a link or installs a new eSIM profile.",
+      "redFlags": ["threatens suspension", "link to verify", "asks you to install an eSIM from a link"],
+      "advice": "Nimbus does not suspend lines by text. Check your account in the Nimbus app or site, not through a link.",
+      "accountRisk": true
+    },
+    {
+      "id": "billing_phish",
+      "label": "Fake bill or payment problem",
+      "description": "Claims a payment failed or a bill is overdue and links to a page that collects card details.",
+      "redFlags": ["payment failed or overdue", "link to update card", "lookalike web address"],
+      "advice": "Check your bill by signing in directly. Never enter card details from a text link.",
+      "accountRisk": false
+    },
+    {
+      "id": "reward_prize",
+      "label": "Fake reward or prize",
+      "description": "Offers loyalty points, a free phone, or a prize that needs a small shipping fee or login to claim.",
+      "redFlags": ["too good to be true", "small fee to claim", "expires soon"],
+      "advice": "Real rewards show up in your account. You never pay a fee to receive a prize.",
+      "accountRisk": false
+    },
+    {
+      "id": "delivery_fee",
+      "label": "Fake delivery problem",
+      "description": "Says a package is held and asks for a redelivery or customs fee through a link.",
+      "redFlags": ["package held", "small fee", "link to pay"],
+      "advice": "Check deliveries in the shop's own app or site. Couriers do not text for redelivery fees.",
+      "accountRisk": false
+    },
+    {
+      "id": "toll_government",
+      "label": "Fake toll, tax, or fine",
+      "description": "Claims an unpaid toll, tax, or fine with a penalty if not paid through a link.",
+      "redFlags": ["unpaid toll or fine", "penalty threat", "link to pay"],
+      "advice": "Agencies send bills by mail or on their own site. Look up the agency yourself.",
+      "accountRisk": false
+    },
+    {
+      "id": "bank_alert",
+      "label": "Fake bank fraud alert",
+      "description": "Poses as a bank's fraud team about a suspicious charge and asks the customer to call or confirm details.",
+      "redFlags": ["suspicious charge", "call this number", "asks for card or login details"],
+      "advice": "Call the number on the back of your card, not one in a text.",
+      "accountRisk": true
+    },
+    {
+      "id": "family_emergency",
+      "label": "Family emergency or new number",
+      "description": "Poses as a relative on a new number who needs money urgently.",
+      "redFlags": ["new number", "urgent money request", "do not call"],
+      "advice": "Call the person on the number you already have before sending anything.",
+      "accountRisk": false
+    },
+    {
+      "id": "wrong_number",
+      "label": "Wrong-number opener",
+      "description": "A friendly 'wrong number' message that starts a conversation leading to romance or investment fraud.",
+      "redFlags": ["stranger starts a chat", "moves to another app", "mentions investing later"],
+      "advice": "Don't reply to unknown 'wrong number' texts. Block and delete.",
+      "accountRisk": false
+    },
+    {
+      "id": "job_task",
+      "label": "Fake job or task offer",
+      "description": "Offers easy remote work, often 'rating products' for pay, that later demands deposits.",
+      "redFlags": ["unsolicited job", "high pay for little work", "contact on another app"],
+      "advice": "Real employers do not recruit by random text or ask you to pay to work.",
+      "accountRisk": false
+    },
+    {
+      "id": "investment_crypto",
+      "label": "Investment or crypto scheme",
+      "description": "Promises guaranteed returns on crypto or trading through a group or app.",
+      "redFlags": ["guaranteed returns", "join a group", "act now"],
+      "advice": "No real investment is guaranteed. Don't move money on advice from a text.",
+      "accountRisk": false
+    }
+  ],
+  "ham": [
+    { "id": "carrier_notice", "label": "Real carrier notice", "description": "Bill ready, autopay done, plan change confirmed. No request for codes or PINs." },
+    { "id": "verification_code", "label": "Real verification code", "description": "A code the customer asked for, with a warning not to share it." },
+    { "id": "delivery_update", "label": "Real delivery update", "description": "Tracking update with no fee." },
+    { "id": "bank_notice", "label": "Real bank notice", "description": "Balance or transaction notice that asks for nothing." },
+    { "id": "appointment", "label": "Reminder", "description": "Appointment, prescription, or reservation reminder." },
+    { "id": "personal", "label": "Personal message", "description": "Everyday text from someone the customer knows." },
+    { "id": "marketing", "label": "Legitimate marketing", "description": "A promotion from a known sender with opt-out." }
+  ]
+}

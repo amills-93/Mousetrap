@@ -6,9 +6,12 @@ const form = reactive({
   ...(data.value?.account.address ?? { street: "", city: "", state: "", zip: "" }),
 });
 const msg = ref<{ ok: boolean; text: string } | null>(null);
+const busy = ref(false);
 
 async function save() {
+  busy.value = true;
   const err = await accountAction("/api/account/profile", form, "PATCH");
+  busy.value = false;
   msg.value = err ? { ok: false, text: err } : { ok: true, text: "Profile saved" };
   if (err) return;
   // Name/email also appear in the header (from the session), so reload when they change.
@@ -19,35 +22,27 @@ async function save() {
 </script>
 
 <template>
-  <div class="space-y-6 max-w-2xl">
-    <h1 class="text-2xl font-semibold text-nimbus">Profile</h1>
-    <Card>
-      <form class="grid gap-4 sm:grid-cols-2" @submit.prevent="save">
-        <label class="text-sm sm:col-span-2">Full name
-          <input v-model="form.name" required maxlength="80" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
-        </label>
-        <label class="text-sm sm:col-span-2">Email
-          <input v-model="form.email" type="email" required class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
-        </label>
-        <label class="text-sm sm:col-span-2">Street address
-          <input v-model="form.street" maxlength="120" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
-        </label>
-        <label class="text-sm">City
-          <input v-model="form.city" maxlength="60" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
-        </label>
-        <div class="grid grid-cols-2 gap-4">
-          <label class="text-sm">State
-            <input v-model="form.state" maxlength="30" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
-          </label>
-          <label class="text-sm">ZIP
-            <input v-model="form.zip" inputmode="numeric" maxlength="10" class="mt-1 w-full rounded border border-gray-300 px-3 py-2" />
-          </label>
+  <div class="max-w-3xl">
+    <PageHeader title="Profile" subtitle="Your contact details and service address." />
+    <form class="space-y-5" @submit.prevent="save">
+      <Card title="Contact">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="label">Full name<input v-model="form.name" required maxlength="80" autocomplete="name" class="input" /></label>
+          <label class="label">Email<input v-model="form.email" type="email" required autocomplete="email" class="input" /></label>
         </div>
-        <div class="sm:col-span-2 flex items-center gap-4">
-          <button class="rounded bg-nimbus text-white px-4 py-2 text-sm font-medium">Save changes</button>
-          <span v-if="msg" class="text-sm" :class="msg.ok ? 'text-green-700' : 'text-red-600'">{{ msg.text }}</span>
+      </Card>
+      <Card title="Service address">
+        <div class="grid gap-4 sm:grid-cols-6">
+          <label class="label sm:col-span-6">Street address<input v-model="form.street" maxlength="120" autocomplete="street-address" class="input" /></label>
+          <label class="label sm:col-span-3">City<input v-model="form.city" maxlength="60" autocomplete="address-level2" class="input" /></label>
+          <label class="label sm:col-span-1">State<input v-model="form.state" maxlength="30" autocomplete="address-level1" class="input" /></label>
+          <label class="label sm:col-span-2">ZIP<input v-model="form.zip" inputmode="numeric" maxlength="10" autocomplete="postal-code" class="input" /></label>
         </div>
-      </form>
-    </Card>
+      </Card>
+      <div class="flex flex-wrap items-center gap-4">
+        <button :disabled="busy" class="btn-primary">{{ busy ? "Saving…" : "Save changes" }}</button>
+        <Notice :msg="msg" />
+      </div>
+    </form>
   </div>
 </template>

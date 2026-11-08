@@ -9,6 +9,7 @@ export async function accountAction(path: string, body: unknown, method: "POST" 
     return null;
   } catch (e: any) {
     if (e instanceof StepUpCancelled) return "Verification cancelled. Nothing was changed.";
+    if (e instanceof ActionPaused) return e.message;
     return e?.data?.statusMessage || e?.statusMessage || "Something went wrong";
   }
 }

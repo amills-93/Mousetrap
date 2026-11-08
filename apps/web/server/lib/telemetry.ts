@@ -21,6 +21,8 @@ const CollectorEvent = z.discriminatedUnion("k", [
   z.object({ k: z.literal("te"), ...Touch }),
   z.object({ k: z.literal("fc"), t, role: z.string().max(40) }),
   z.object({ k: z.literal("nv"), t, route: z.string().max(200) }),
+  z.object({ k: z.literal("ps"), t, role: z.string().max(40) }),
+  z.object({ k: z.literal("vs"), t, hidden: z.boolean() }),
 ]);
 
 export const TelemetryBatch = z.object({

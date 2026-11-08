@@ -3,7 +3,7 @@
 
 export const TIERS = ["view", "standard", "elevated", "critical"] as const;
 export type Tier = (typeof TIERS)[number];
-export type Decision = "allow" | "step_up" | "deny";
+export type Decision = "allow" | "step_up" | "pause" | "deny";
 export type Thresholds = Record<Tier, { stepUp: number; deny: number }>;
 
 const DEFAULT_THRESHOLDS: Thresholds = {
@@ -45,6 +45,44 @@ export interface TrustInput {
   windows: number; // windows ML has scored this session
   profileActive: boolean; // BiometricProfile.status === "active"
   stepUpActive: boolean; // SessionTrust.stepUpUntil > now
+  coaching: number; // coachingScore().score: does this look like someone being talked through it?
+  holdReleased: boolean; // a scam hold on this action has run its course (set per route by requireTrust)
+}
+
+// Coaching signals (ARCHITECTURE.md 7.5): ML counts them (coaching.py), this turns them into a 0..1 score with
+// reasons for the overlay and /admin/risk. Hand-set rules, not a trained model: there is no data on coached users.
+export interface CoachingSignals {
+  pastes: number; // pastes into inputs, last 3 min
+  tabSwitches: number; // left the page 1.5 s+ and came back, last 3 min
+  longPauses: number; // 10 s+ silent pauses, last 3 min
+  chunkedDigits: number; // gaps between spaced digit groups, last 3 min
+  navs: number; // route changes this session
+}
+
+export const PAUSE_AT = 0.5;
+export const FRESH_SESSION_MS = 5 * 60 * 1000;
+
+// recentScamContact: a scam text of a kind that ends in an account action arrived in the last 24 h (7.6). It counts
+// even when ML's behavioral counts are unavailable.
+export function coachingScore(
+  c: CoachingSignals | null | undefined,
+  sessionAgeMs: number,
+  recentScamContact = false,
+): { score: number; reasons: string[] } {
+  const parts: [number, string][] = [];
+  if (recentScamContact) parts.push([0.3, "received a likely scam text in the last 24 h"]);
+  if (!c) return finish(parts);
+  if (c.tabSwitches) parts.push([0.3 * Math.min(c.tabSwitches, 2), `left the page and came back ${c.tabSwitches}x`]);
+  if (c.pastes) parts.push([0.3, "pasted into a field"]);
+  if (c.chunkedDigits >= 2) parts.push([0.25, "digits entered in spaced groups"]);
+  if (c.longPauses) parts.push([0.15, "long silent pause"]);
+  if (sessionAgeMs < FRESH_SESSION_MS && c.navs <= 2) parts.push([0.2, "went straight here after signing in"]);
+  return finish(parts);
+}
+
+function finish(parts: [number, string][]) {
+  const score = Math.min(1, parts.reduce((s, [w]) => s + w, 0));
+  return { score: Math.round(score * 100) / 100, reasons: parts.map(([, r]) => r) };
 }
 
 // The risk the thresholds are compared against, after the unknown-risk rule (7.4 step 4).
@@ -57,12 +95,38 @@ export function effectiveRisk(input: TrustInput, tier: Tier): number {
 
 // 7.4 steps 2-5 plus the threshold comparison, with no side effects.
 export function decide(input: TrustInput, tier: Tier, t: Thresholds = thresholds()): Decision {
-  if (input.stepUpActive) return "allow";
-  if (!input.profileActive) return tier === "critical" ? "step_up" : "allow";
   const risk = effectiveRisk(input, tier);
-  if (risk >= t[tier].deny) return "deny";
+  // Deny wins even inside the step-up window: a fresh code does not excuse behavior that keeps looking foreign.
+  if (input.profileActive && risk >= t[tier].deny) return "deny";
+  // Someone being talked through a critical change is usually the real owner, so step-up would not stop it: warn
+  // and hold instead (7.5). Needs no profile, and a recent step-up does not skip it.
+  if (tier === "critical" && input.coaching >= PAUSE_AT && !input.holdReleased) return "pause";
+  if (!input.profileActive) return input.stepUpActive || tier !== "critical" ? "allow" : "step_up";
+  if (input.stepUpActive) return "allow";
   if (risk >= t[tier].stepUp) return "step_up";
   return "allow";
+}
+
+// Step-up typing challenge (ARCHITECTURE.md 5.3b). Mean keys risk of the phrase windows at or above this fails.
+export const TYPING_MAX_RISK = 0.5;
+// Log-only for now: on the Stage 5 data the free-text keys model fails the owner's own live typing 43-60% of the
+// time at 0.5 and does not separate a second person, so a "fail" is recorded but changes nothing, and a "pass"
+// earns no trust. Flip this once a phrase-specific model separates people.
+export const TYPING_ENFORCE = false;
+
+export interface TypingResult {
+  keysModeled: boolean;
+  started: boolean;
+  windows: number;
+  risk: number | null;
+}
+
+// skip: nothing to judge (ML down, or no keystroke model): TOTP alone decides, as before.
+// retry: no phrase typing reached ML yet. fail: the typing does not look like the owner.
+export function judgeTyping(r: TypingResult | null, max = TYPING_MAX_RISK): "pass" | "skip" | "retry" | "fail" {
+  if (!r || !r.keysModeled) return "skip";
+  if (!r.started || r.windows === 0 || r.risk === null) return "retry";
+  return r.risk >= max ? "fail" : "pass";
 }
 
 export function decideAll(input: TrustInput, t: Thresholds = thresholds()): Record<Tier, Decision> {

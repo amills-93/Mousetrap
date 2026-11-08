@@ -1,0 +1,175 @@
+{
+  "heldoutTemplates": {
+    "rows": 892,
+    "model": {
+      "precision": 0.997,
+      "recall": 0.9176,
+      "f1": 0.9557,
+      "falsePositiveRate": 0.0019,
+      "confusion": {
+        "tp": 334,
+        "fp": 1,
+        "tn": 527,
+        "fn": 30
+      },
+      "rocAuc": 0.996
+    },
+    "baseline": {
+      "precision": 1.0,
+      "recall": 0.2637,
+      "f1": 0.4174,
+      "falsePositiveRate": 0.0,
+      "confusion": {
+        "tp": 96,
+        "fp": 0,
+        "tn": 528,
+        "fn": 268
+      }
+    },
+    "categoryAccuracy": 0.7198,
+    "perCategoryAccuracy": {
+      "appointment": 1.0,
+      "bank_alert": 0.9643,
+      "bank_notice": 1.0,
+      "billing_phish": 1.0,
+      "carrier_impersonation": 1.0,
+      "carrier_notice": 1.0,
+      "delivery_fee": 1.0,
+      "delivery_update": 1.0,
+      "family_emergency": 0.5,
+      "investment_crypto": 1.0,
+      "job_task": 1.0,
+      "marketing": 1.0,
+      "otp_theft": 0.9643,
+      "personal": 0.9949,
+      "port_out_pin": 1.0,
+      "reward_prize": 1.0,
+      "sim_deactivation": 1.0,
+      "toll_government": 1.0,
+      "verification_code": 1.0,
+      "wrong_number": 0.5
+    },
+    "examplesWrong": [
+      {
+        "text": "It's me Mom, please don't call I can't talk right now, just reply here. I need help",
+        "label": "scam",
+        "category": "family_emergency"
+      },
+      {
+        "text": "Hi, this is Quinn's friend.  She said you could help me with investing?",
+        "label": "scam",
+        "category": "wrong_number"
+      },
+      {
+        "text": "It's me Auntie, please don't call I can't talk right now, just repy here. I need help",
+        "label": "scam",
+        "category": "family_emergency"
+      },
+      {
+        "text": "It's me Mom, please don't call I can't talk right now, just reply here. I need help \ud83d\udce6",
+        "label": "scam",
+        "category": "family_emergency"
+      },
+      {
+        "text": "Hi, this is Alex's friend. She said you could help me with investing?",
+        "label": "scam",
+        "category": "wrong_number"
+      },
+      {
+        "text": "It's me Grandpa, please don't call I can't talk right now, just reply here. I need help",
+        "label": "scam",
+        "category": "family_emergency"
+      },
+      {
+        "text": "It's me Dad, please don't call I can't talk right now, just reply here. I need help",
+        "label": "scam",
+        "category": "family_emergency"
+      },
+      {
+        "text": "Hi, this is Casey's friend. She said you could help me with investing?",
+        "label": "scam",
+        "category": "wrong_number"
+      },
+      {
+        "text": "Quin says hi",
+        "label": "ham",
+        "category": "personal"
+      },
+      {
+        "text": "It's me Auntie, please don't call I can't talk right now, just reply here. I need help",
+        "label": "scam",
+        "category": "family_emergency"
+      },
+      {
+        "text": "Hi, this is Jordan's friend. She said you could help me with investing?",
+        "label": "scam",
+        "category": "wrong_number"
+      },
+      {
+        "text": "It's me Dad, please don't call I can't talk right now, just reply here. I need help \u2705",
+        "label": "scam",
+        "category": "family_emergency"
+      }
+    ]
+  },
+  "randomSplit": {
+    "rows": 892,
+    "model": {
+      "precision": 1.0,
+      "recall": 0.9945,
+      "f1": 0.9972,
+      "falsePositiveRate": 0.0,
+      "confusion": {
+        "tp": 362,
+        "fp": 0,
+        "tn": 528,
+        "fn": 2
+      },
+      "rocAuc": 1.0
+    },
+    "baseline": {
+      "precision": 1.0,
+      "recall": 0.2665,
+      "f1": 0.4208,
+      "falsePositiveRate": 0.0,
+      "confusion": {
+        "tp": 97,
+        "fp": 0,
+        "tn": 528,
+        "fn": 267
+      }
+    },
+    "categoryAccuracy": 1.0,
+    "perCategoryAccuracy": {
+      "appointment": 1.0,
+      "bank_alert": 1.0,
+      "bank_notice": 1.0,
+      "billing_phish": 1.0,
+      "carrier_impersonation": 1.0,
+      "carrier_notice": 1.0,
+      "delivery_fee": 1.0,
+      "delivery_update": 1.0,
+      "family_emergency": 1.0,
+      "investment_crypto": 1.0,
+      "job_task": 1.0,
+      "marketing": 1.0,
+      "otp_theft": 1.0,
+      "personal": 1.0,
+      "port_out_pin": 1.0,
+      "reward_prize": 1.0,
+      "sim_deactivation": 1.0,
+      "toll_government": 1.0,
+      "verification_code": 1.0,
+      "wrong_number": 0.9375
+    }
+  },
+  "thresholds": {
+    "scam": 0.5,
+    "suspicious": 0.25
+  },
+  "dataset": {
+    "rows": 3568,
+    "scam": 1456,
+    "heldout": 892
+  }
+}

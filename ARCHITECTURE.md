@@ -83,7 +83,7 @@ Nuxt --POST {ML_URL}/ingest (X-Internal-Key)--> ML service
 ML: append events to session buffer -> build windows -> score -> update EWMA
 ```
 
-- Collector flushes every 3 s or 200 events, whichever first, plus `navigator.sendBeacon` on `pagehide`.
+- Collector flushes every 3 s or 200 events, whichever first, plus `navigator.sendBeacon` on `pagehide`. `trustedFetch()` also awaits `flush()` (capped at 1 s) before every gated request, so the typing on the form itself reaches ML first.
 - Each batch carries `seq` (monotonic per page load) and `pageId` (random UUID per load). Nuxt drops batches with non-increasing `seq` for a `pageId` (basic replay guard).
 - Nuxt rejects telemetry with no valid session (401). Unauthenticated pages (login) do not collect.
 
@@ -92,20 +92,33 @@ ML: append events to session buffer -> build windows -> score -> update EWMA
 ```
 Browser --POST /api/account/sim-swap--> Nuxt
 Nuxt: requireTrust(event, "critical")
-  -> GET {ML_URL}/risk/{sessionId}
+  -> POST {ML_URL}/risk/{sessionId}/close   (scores the open window, then returns risk)
   -> policy decision
      allow    -> perform action
      step_up  -> 403 {action:"step_up", challengeId}
-     deny     -> revoke session, 401 {action:"logout"}
+     pause    -> create ScamHold, 403 {action:"pause", holdId, holdMs}   (7.5)
+     deny     -> revoke session, 401 {action:"logout"} with no reason (the user is not told why)
 Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry original action
+         on pause show ScamPauseModal -> POST /api/holds/{holdId} {choice} -> action not performed
 ```
 
 ### 5.3 Step-up success
 
 - `/api/stepup/verify` checks the code with Better Auth's own `verifyTOTP` against the active session (same authenticator entry as sign-in; with a session it creates no new session and applies no lockout). The `otplib` / `StepUpFactor` fallback is unused.
-- Mark session `stepUpUntil = now + 5 min` (stored in `SessionTrust` table, keyed by Better Auth session id).
-- Call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
-- Within the `stepUpUntil` window, `requireTrust` returns `allow` for tiers up to `critical`.
+- Mark session `stepUpUntil = now + 60 s` (stored in `SessionTrust` table, keyed by Better Auth session id).
+- If ML had scored at least `MIN_WINDOWS` (3) windows of the session, call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. A step-up forced only by missing telemetry sends no feedback: it is passed with the same TOTP used to sign in, so it says nothing about whose windows those are. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
+- Within the `stepUpUntil` window, `requireTrust` skips step-up for every tier, but a risk at or above a tier's `deny` threshold still revokes the session.
+
+### 5.3b Step-up typing challenge
+
+A TOTP code alone proves little right after sign-in: the attacker just used the same code to sign in. So the prompt also asks the user to type a short phrase (paste is blocked), and its keystroke timing is judged against the owner's keys model.
+
+- When `requireTrust` returns `step_up`, Nuxt calls ML `POST /challenge/{sessionId}/start {userId}`. ML scores the open window as usual, then records the keys risk (plus bot penalty) of every later window that has typing.
+- `StepUpModal` awaits a collector flush before posting the code. `/api/stepup/verify` first calls `POST /challenge/{sessionId}/result`, which closes the open window and returns `{keysModeled, started, windows, risk}` (`risk` is the mean over the challenge windows). It starts a challenge if none is running, so calling verify without a prompt cannot skip the typing.
+- `judgeTyping()` in `policy.ts` (pure, unit-tested): no ML or no keys model → `skip` (TOTP alone, as before); no typed windows yet → `retry` (400 `{action:"type_phrase"}`, not counted as a failed attempt); mean risk ≥ `TYPING_MAX_RISK` (0.5) → `fail`; otherwise `pass`.
+- Every judged result is logged as `RiskEvent(type: "typing_ok" | "typing_failed", risk)` for `/admin/risk`.
+- **Log-only for now (`TYPING_ENFORCE = false`).** On the Stage 5 data the free-text keys model, applied per phrase (two windows), fails the owner's own live typing 43–60% of the time at 0.5 (12–19% at 0.8) and fails the second person less often on one model, so it cannot decide this. The prompt still requires typed input, and the results are logged so a phrase-specific model can be calibrated later. With enforcement on, `fail` revokes the session silently, like a deny, before the code is checked, and `pass` allows ML feedback even when the session had fewer than `MIN_WINDOWS` scored windows.
+- The phrase text never leaves the browser; only keystroke timing does, through the normal collector (principle 3).
 
 ### 5.4 Step-up failure
 
@@ -131,7 +144,9 @@ type CollectorEvent =
   | { k: "tm"; t: number; id: number; x: number; y: number; r: number; f: number }  // touchmove, throttled per touch
   | { k: "te"; t: number; id: number; x: number; y: number; r: number; f: number }  // touchend / touchcancel
   | { k: "fc"; t: number; role: string }                     // focus change: input role/type, never value
-  | { k: "nv"; t: number; route: string };                   // route change
+  | { k: "nv"; t: number; route: string }                    // route change
+  | { k: "ps"; t: number; role: string }                     // a paste happened: target role/type only, never the text
+  | { k: "vs"; t: number; hidden: boolean };                 // page hidden/shown or window blurred/focused
 
 interface TelemetryBatch {
   v: 1;
@@ -155,7 +170,7 @@ interface TelemetryBatch {
 
 ```ts
 const c = createCollector({ endpoint: "/api/telemetry", flushMs: 3000, maxBatch: 200 });
-c.start(); c.stop(); c.flush(); c.setRoute(path);
+c.start(); c.stop(); await c.flush(); c.setRoute(path); // flush() settles when all in-flight batches have
 ```
 
 - Optional observability hooks `onEvent(e)` and `onBatch(info)` (seq, event count, counts per kind, bytes, transport, HTTP status, latency, response) see exactly what is sent and nothing more. The DevOverlay (7.3) uses them; production builds leave them unset.
@@ -244,6 +259,18 @@ model SessionTrust {
   updatedAt    DateTime  @updatedAt
 }
 
+model ScamHold {                       // 7.5
+  id        String    @id @default(cuid())
+  userId    String
+  sessionId String
+  route     String
+  status    String    @default("pending") // pending | cancelled | held | used
+  reasons   String    @default("")         // coachingScore() reasons, "|"-separated (admin only)
+  releaseAt DateTime?
+  createdAt DateTime  @default(now())
+  @@index([userId, route])
+}
+
 model StepUpFactor {
   userId String @id
   secret String              // demo only; fallback path
@@ -269,15 +296,15 @@ All seeded data is fictional: 555 phone numbers, fake account numbers, fake ICCI
 | Route | Content | Sensitivity tier |
 |---|---|---|
 | `/login` | email + password, TOTP if prompted | n/a |
+| `/signup` | multi-step sign-up (7.3a) | n/a |
 | `/` (Overview) | balance due, lines summary, data usage bars | `view` |
 | `/lines` | per-line cards: plan, device, usage | `view` |
-| `/lines/:id` | rename line, change plan | `standard` |
+| `/lines/:id` | rename line (`standard`), change plan (`critical`) | `standard` / `critical` |
 | `/billing` | bill history, pay bill, toggle autopay | pay/autopay: `elevated` |
 | `/profile` | name, email, address | edit: `elevated` |
 | `/security` | change password, port-out PIN reveal, signed-in devices | `critical` |
 | `/security/sim` | SIM swap / eSIM transfer to new device | `critical` |
 | `/security/authorized-users` | add authorized user | `critical` |
-| `/enroll` | biometric enrollment flow | n/a |
 | `/admin/risk` | demo-only live view of all sessions and scores | demo flag |
 
 UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2D7C` primary, cyan `#22C3E6` accent, neutral grays).
@@ -288,6 +315,15 @@ UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2
 2. **Telemetry** (Stage 4): collector running/stopped and pending count, totals per modality plus `synthetic`, a feed of the latest events (key class and `code_hash` only), a trail of recent mouse/touch positions, and the latest batches (transport, bytes, HTTP status, latency, events buffered at ML).
 
 The meter only displays; it never decides (principle 1). `/api/risk` returns `{risk, windows, lastUpdated, components, bot, thresholds, decisions, criticalRisk, mlAvailable, profileActive, stepUpActive}`, where `decisions` maps each tier to `allow | step_up | deny` as computed server-side by the same pure function `requireTrust` uses (7.4, steps 2–5, without side effects). The status label is the `critical` decision, e.g. "SIM swap would require step-up". The overlay draws the threshold markers from the `thresholds` the server returns, so `POLICY_THRESHOLDS_JSON` overrides show up live.
+
+### 7.3a Sign-up (`/signup`)
+
+Five steps: login (name, email, password) → service address → line (plan, line name, 6-digit port-out PIN, typed twice) → review and a typed e-signature (full name plus a fixed statement, paste blocked) → authenticator.
+
+- The login is created first (`signUp.email` signs in), so steps 2 to 5 are typed inside a session and the collector feeds passive enrollment (8.1) with roughly 150 to 200 keystrokes, about the 8 typing windows a profile needs. Step 1 is typed before a session exists and is not collected. Only timing and key class are collected, as everywhere (principle 3).
+- `POST /api/signup/account` creates the `CustomerAccount` with one line and a first bill (fictional account number, `(214) 555-01xx` number, `8999` ICCID). It is create-only (409 if an account exists), so it needs no trust tier.
+- The authenticator step re-asks for the password (`twoFactor.enable`), shows the `otpauth` QR code (rendered client-side with `uqr`) and the manual key, and finishes with `twoFactor.verifyTotp`, which sets `twoFactorEnabled`. Backup codes are shown once.
+- `GET /api/signup/status` returns `{hasAccount, twoFactor, complete}`. `/signup` resumes an unfinished sign-up at the right step, and `/login` sends a user signed in without an authenticator to `/signup`.
 
 ### 7.4 Policy (`server/lib/policy.ts`)
 
@@ -305,8 +341,8 @@ const THRESHOLDS: Record<Tier, { stepUp: number; deny: number }> = {
 `requireTrust(event, tier)`:
 
 1. Resolve session; if none, 401.
-2. If `SessionTrust.stepUpUntil > now`, allow.
-3. Fetch `/risk/{sessionId}` from ML (timeout 300 ms).
+2. If `SessionTrust.stepUpUntil > now`, allow unless risk reaches the tier's `deny` threshold (checked in step 6).
+3. Fetch `POST /risk/{sessionId}/close` from ML (timeout 300 ms): ML first scores the session's open window, so a fast attacker's last few seconds of input count. `/api/risk` uses the read-only `GET /risk/{sessionId}`.
 4. If ML unreachable or `windows < MIN_WINDOWS (3)`, treat risk as `0.6` for `elevated`/`critical` (forces step-up), `0` otherwise.
 5. If user's `BiometricProfile.status !== "active"`, require step-up for `critical`, allow others.
 6. Compare risk to thresholds; on `deny` call Better Auth to revoke the session.
@@ -316,7 +352,39 @@ Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, 
 
 Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`, any subset, e.g. `{"critical":{"stepUp":0.3}}`) for tuning during the demo; restart `web` to apply.
 
-On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login?reason=risk`. Re-enrolling an active profile is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
+On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login`: plain, with no message, after a risk deny; `?reason=stepup_failed` after 3 wrong codes. Re-learning an active profile (`POST /api/enroll/start`, the DevOverlay's "re-learn") is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
+
+### 7.5 Scam pause (coached customers)
+
+Many carrier scams end with the real owner making the change: a caller posing as support talks them through revealing a transfer PIN or moving their SIM. Step-up does not help, because the owner passes it. So a critical action that looks coached gets a warning and a hold instead.
+
+- **Signals.** ML's `coaching.py` counts these, all content-free, over the last 3 minutes: pastes into inputs (`ps`); leaving the page for 1.5 s or more and coming back (`vs`); silent pauses of 10 s or more; digits typed in spaced groups with 1.2–8 s gaps, as if read out. It also counts route changes this session. `/risk` returns the counts as `coaching`.
+- **Score.** `coachingScore()` in `policy.ts` is hand-set rules, since there is no data on coached users. It is unit-tested.
+
+  | Signal | Weight |
+  |---|---|
+  | tab switch | 0.3 each, up to 2 |
+  | paste | 0.3 |
+  | 2+ spaced digit groups | 0.25 |
+  | long pause | 0.15 |
+  | session < 5 min old with ≤ 2 route changes ("straight here after signing in") | 0.2 |
+  | a scam text that ends in an account action, received in the last 24 h (7.6) | 0.3 |
+
+  The score is capped at 1.
+- **Decision.** `decide()` returns `pause` for `critical` when the score is 0.5 or more. Deny still wins. Pause applies with or without a profile and even inside a step-up window, because the coached owner can pass step-up.
+- **Hold.** `requireTrust` creates a `ScamHold` (`pending`) and returns 403 `{action:"pause", holdId, holdMs}`. `ScamPauseModal` explains the scam, says Nimbus never asks for this, and offers two answers: "someone asked me to" (`cancelled`, logged `pause_reported`) or "I'm doing this myself" (`held` until `now + PAUSE_HOLD_MS`, 24 h by default, logged `pause_held`). The action is not performed either way. Once the hold has passed, that route skips the pause once (`used`).
+- **What the customer is told.** The modal names no signals, since a scammer on the call would learn what to avoid. The reasons go only to the demo overlay and `/admin/risk`.
+
+### 7.6 Screened messages (Scam Shield)
+
+- `Message` rows hold the customer's texts with the verdict ML gave on arrival: `verdict`, `scamProbability`, `category`, `advice`, `accountRisk`, `redFlags`, and the customer's own `customerVerdict` (`reported` / `not_scam`).
+- `GET /api/messages` fills a synthetic demo inbox on a user's first visit (`lib/messages.ts`; no reseed needed). The inbox includes the demo story's fake "Nimbus Security" text.
+- `POST /api/messages/:id {action}` records the customer's feedback.
+- `POST /api/messages/simulate` (DEMO_MODE) delivers a typed text so judges can try their own wording.
+- `/messages` shows each verdict in words ("Scam very likely", "Be careful"), with the category, advice, and red flags. It also gives the percentage and says the filter can be wrong.
+- If ML is down, a message is delivered marked "not checked", never shown as "ok".
+- **Feeding the scam pause.** A recent `accountRisk` scam (fake carrier support, code theft, transfer-PIN request, SIM deactivation, bank alert) raises the coaching score, unless the customer marked it "not a scam". That ties the text to the account action it is setting up.
+- **Privacy.** Every message is synthetic. Classification runs in the ML service; `/classify` scores a text and keeps nothing. Stored messages hold the text and its verdict for the inbox.
 
 ## 8. ML service (services/ml)
 
@@ -326,13 +394,22 @@ On the client, gated requests go through `trustedFetch()` (`composables/useStepU
 |---|---|---|
 | POST | `/ingest` | `{userId, sessionId, batch}`; buffer, window, score |
 | GET | `/risk/{sessionId}` | `{risk, windows, lastUpdated, components, bot}` |
-| POST | `/enroll/{userId}/start` | reset enrollment buffer |
+| POST | `/risk/{sessionId}/close` `{userId}` | same; scores the open window first (gated actions) |
+| POST | `/classify` `{text}` | scam verdict: `{verdict, scamProbability, category, categoryLabel, advice, accountRisk, redFlags}` (8.7) |
+| GET | `/classifier/metrics` | held-out evaluation from training |
+| POST | `/enroll/{userId}/start` | start (or restart) enrollment with an empty buffer |
 | POST | `/enroll/{userId}/finish` | train model, return `{windowCount, ok}` |
 | POST | `/feedback` | `{userId, sessionId, label}`; on `genuine`, add recent windows and retrain in background |
-| GET | `/users/{userId}/status` | enrolled?, window count, model version |
+| GET | `/users/{userId}/status` | enrolled?, enrolling?, enrollment progress and targets, window count, model version |
 | GET | `/healthz` | liveness |
 
-During enrollment (`/enroll` page), `/ingest` routes that user's windows to the enrollment buffer instead of scoring.
+Enrollment is passive: there is no enrollment page, and the user is never told it is happening.
+
+- While a user is enrolling, `/ingest` routes their windows from normal portal use to the enrollment buffer instead of scoring. Windows completed by a batch with `synthetic > 0` are logged as `bot` and never enrolled.
+- `/ingest` returns `enrolled`, `enrolling`, and `enrollReady`. Ready means 40 windows, at least 8 of them with typing (keys decide, 8.4); a user who never types stays enrolling.
+- Nuxt (`server/lib/enroll.ts`, called after every telemetry batch, fire-and-forget): no model, not enrolling, and no active profile → `/enroll/{id}/start` and set the profile to `enrolling`. `enrollReady` → `/enroll/{id}/finish` and set the profile `active`. An active profile is never replaced passively (principle 5).
+- Enrollment can span sessions, so it survives an ML restart: `models/{userId}/enrolling.json` records when it started, and the buffer is rebuilt from the `enroll` rows in `features.parquet` since then.
+- Until the profile is active, policy treats the user as not enrolled (7.4: critical actions step up, others allow). Whoever uses the account first defines the template, so enrollment only ever runs inside a session that passed sign-in, including TOTP for 2FA accounts.
 
 ### 8.2 Windowing
 
@@ -385,13 +462,36 @@ Log every feature vector to `models/{userId}/features.parquet` for debugging and
 - Bot heuristics add to a window's risk: `synthetic > 0` in the batch that completed it (+0.3), mouse path angle-change std < 0.01 rad (+0.2), keydown interval std < 5 ms over 20+ keys (+0.3).
 - `scripts/replay.py <modelUser> <dataUser>` replays logged windows through a model and the EWMA to check where a session would settle.
 
+### 8.7 Scam classifier
+
+- **Data** (`data/`):
+  - `taxonomy.json` holds 13 scam categories, each with red flags, customer advice, and whether it ends in an account action. It also lists 7 kinds of legitimate message.
+  - `messages.jsonl` holds 3,568 synthetic texts (1,456 scam) from `scripts/generate_messages.py`: fixed templates filled with fictional names, 555-01xx numbers, and `.example`/`.test` links, deterministic seed.
+  - It includes hard negatives on purpose: real carrier notices that mention PINs, real verification codes, real delivery links.
+- **Held-out wording.** Every fourth template of each category is held out, so evaluation measures wording the model never saw, not memorized templates.
+- **Model** (`app/classifier.py`):
+  - Scam vs not: logistic regression over TF-IDF word 1–2-grams, character 3–5-grams (lookalike domains, odd spellings), and one feature per red flag.
+  - A second model picks the category for scams.
+  - The red flags are rules that skip negated requests ("we will never ask for your PIN"). They explain verdicts to customers and are the rules-only baseline.
+  - Verdict: `scam` at p ≥ 0.5, `suspicious` at 0.25 or more, otherwise `ok`.
+  - Trained at image build by `scripts/train_classifier.py`, which writes `metrics.json`. A copy is kept in `data/classifier_metrics.json`.
+- **Results on held-out templates** (892 rows):
+
+  | | F1 | Precision | Recall | False positive rate |
+  |---|---|---|---|---|
+  | Model | 0.956 | 0.997 | 0.918 | 0.2% |
+  | Rules-only baseline | 0.417 | | | |
+
+  The model's ROC AUC is 0.996 and its category accuracy is 0.72. A random split scores 0.997, which shows how much seen templates inflate the number. The held-out figure is the one to quote.
+- **Limits.** Every message comes from our own templates, so real-world accuracy is unknown. The most-missed kinds are short, link-free openers (family emergency, wrong number). Held-out errors were looked at twice during development: once leading to more varied legitimate messages and red-flag features, once to fix negated PIN warnings. So the held-out number is slightly optimistic.
+
 ## 9. Security notes (demo scope)
 
 - ML service is not exposed publicly; only Nuxt calls it, with `X-Internal-Key`.
 - CSRF: Better Auth defaults; telemetry endpoint accepts only same-origin `fetch` with JSON content type plus `sendBeacon` (text/plain JSON) from same origin.
 - Rate limit `/api/telemetry` per session (e.g. 5 req/s).
 - No real personal data. Seed users and data are fictional.
-- Show a consent banner on `/enroll` explaining what is collected (timing and motion only) and that it is a demo.
+- `/login` carries a one-line notice that the portal looks at typing and motion timing (never what is typed) and that it is a demo. Enrollment itself is not surfaced.
 
 ## 10. Environment variables
 
@@ -402,6 +502,7 @@ BETTER_AUTH_URL=http://localhost:3000
 ML_URL=http://ml:8000
 ML_INTERNAL_KEY=...
 POLICY_THRESHOLDS_JSON=
+PAUSE_HOLD_MS=          # scam-pause hold (7.5); default 24 h, e.g. 60000 for the demo
 DEMO_MODE=true          # enables DevOverlay (risk meter + telemetry) and /admin/risk
 DOMAIN=localhost        # Caddy hostname (deploy profile)
 TRUST_PROXY=false       # true behind Caddy: client IP from X-Forwarded-For
@@ -458,4 +559,5 @@ LLM_API_KEY=
 3. Switch back to Alex's session; a teammate takes the keyboard and mouse; meter climbs.
 4. Teammate opens SIM swap: step-up TOTP modal appears.
 5. Teammate keeps pushing / fails TOTP: session revoked, back to login.
-6. Show `/admin/risk` timeline and the vanilla-adapter page to prove the front end is swappable.
+6. Coached owner: Alex opens Messages. Scam Shield has flagged a fake "Nimbus Security" text about a SIM change, which says an agent will call and to have the transfer PIN ready. The "agent" (a teammate) calls and talks Alex through moving the line to a new SIM. Alex switches tabs and back, then types the ICCID as it is read out in groups. SIM swap shows the scam pause (recent scam text + tab switch + spaced digits), and Alex taps "someone asked me to". A judge can also type their own text into the demo "receive a text" box.
+7. Show the `/admin/risk` timeline (decisions, the pause and the report, coaching score with reasons) and the vanilla-adapter page to prove the front end is swappable.

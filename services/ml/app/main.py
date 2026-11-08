@@ -1,12 +1,14 @@
+import json
 import logging
 import os
 from collections import Counter
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
-from . import buffer, enrollment, features, model, scoring
+from . import buffer, classifier, coaching, enrollment, features, model, scoring
 from .schemas import (
-    EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse, UserStatus,
+    ChallengeResponse, ClassifyRequest, ClassifyResponse, CloseRequest, EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse,
+    UserStatus,
 )
 
 log = logging.getLogger("uvicorn.error")
@@ -33,6 +35,21 @@ def valid_user(user_id: str) -> str:
 internal = [Depends(require_internal_key)]
 
 
+@app.post("/classify", response_model=ClassifyResponse, dependencies=internal)
+def classify(req: ClassifyRequest) -> ClassifyResponse:
+    """Scam verdict for one message (ARCHITECTURE.md 8.7). The text is scored and dropped, never stored or logged."""
+    return ClassifyResponse(**classifier.classify(req.text))
+
+
+@app.get("/classifier/metrics", dependencies=internal)
+def classifier_metrics() -> dict:
+    """Held-out evaluation written at training time."""
+    path = classifier.CLASSIFIER_DIR / "metrics.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="classifier not trained")
+    return json.loads(path.read_text())
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     return {"ok": True}
@@ -42,11 +59,15 @@ def healthz() -> dict:
 def ingest(req: IngestRequest) -> IngestResponse:
     user_id = valid_user(req.userId)
     buf, windows = buffer.append(user_id, req.sessionId, req.batch)
+    coaching.observe(user_id, req.sessionId, req.batch.pageId, req.batch.events)
     rows = [features.extract(w) for w in windows]
 
     enroll_windows = None
     st = None
-    if enrollment.is_enrolling(user_id):
+    enrolling = enrollment.is_enrolling(user_id)
+    if enrolling and req.batch.synthetic:
+        phase = "bot"  # never learn a template from scripted input
+    elif enrolling:
         enroll_windows = enrollment.add(user_id, rows)
         phase = "enroll"
     else:
@@ -69,7 +90,9 @@ def ingest(req: IngestRequest) -> IngestResponse:
         (f" risk={st.risk:.2f} scored={st.windows}" if st else ""),
     )
     return IngestResponse(
-        ok=True, buffered=len(buf.events), windows=len(rows), enrollWindows=enroll_windows,
+        ok=True, buffered=len(buf.events), windows=len(rows),
+        enrolled=model.meta(user_id) is not None, enrolling=enrolling,
+        enrollReady=enrolling and enrollment.ready(user_id), enrollWindows=enroll_windows,
         risk=round(st.risk, 4) if st and st.windows else None, scoredWindows=st.windows if st else None,
     )
 
@@ -111,6 +134,9 @@ def user_status(user_id: str) -> UserStatus:
         enrolled=bool(meta),
         enrolling=enrollment.is_enrolling(user_id),
         enrollWindows=enrollment.count(user_id),
+        enrollKeyWindows=enrollment.key_count(user_id),
+        enrollTarget=enrollment.READY_WINDOWS,
+        enrollKeyTarget=enrollment.READY_KEY_WINDOWS,
         windowCount=meta.get("windowCount", 0),
         modelVersion=meta.get("version", 0),
     )
@@ -119,15 +145,70 @@ def user_status(user_id: str) -> UserStatus:
 @app.get("/risk/{session_id}", response_model=RiskResponse, dependencies=internal)
 def risk(session_id: str) -> RiskResponse:
     """Current session risk. windows=0 means nothing scored yet (or no model); Nuxt policy treats that as unknown."""
+    return _risk_response(session_id)
+
+
+@app.post("/risk/{session_id}/close", response_model=RiskResponse, dependencies=internal)
+def risk_close(session_id: str, req: CloseRequest) -> RiskResponse:
+    """Score the session's open window, then return its risk. Nuxt calls this when a gated action is attempted, so
+    the action is judged on the input that led up to it rather than waiting for the window to fill."""
+    user_id = valid_user(req.userId)
+    _close_window(user_id, session_id)
+    return _risk_response(session_id)
+
+
+def _close_window(user_id: str, session_id: str) -> None:
+    windows = buffer.drain(user_id, session_id)
+    if windows and not enrollment.is_enrolling(user_id):
+        rows = [features.extract(w) for w in windows]
+        scoring.update(user_id, session_id, windows, rows, 0)
+        enrollment.log_features(user_id, session_id, "live", rows)
+
+
+def _keys_modeled(user_id: str) -> bool:
+    return "keys" in ((model.meta(user_id) or {}).get("modalities") or {})
+
+
+@app.post("/challenge/{session_id}/start", response_model=ChallengeResponse, dependencies=internal)
+def challenge_start(session_id: str, req: CloseRequest) -> ChallengeResponse:
+    """Step-up opened: earlier input is scored as usual, then keystroke windows from here on are collected."""
+    user_id = valid_user(req.userId)
+    modeled = _keys_modeled(user_id)
+    if modeled:
+        _close_window(user_id, session_id)
+        scoring.start_challenge(user_id, session_id)
+    return ChallengeResponse(keysModeled=modeled, started=False, windows=0, risk=None)
+
+
+@app.post("/challenge/{session_id}/result", response_model=ChallengeResponse, dependencies=internal)
+def challenge_result(session_id: str, req: CloseRequest) -> ChallengeResponse:
+    """Step-up submitted: score the open window, then report the challenge. Starts one if none is running, so
+    calling verify without a prior step-up prompt cannot skip the typing."""
+    user_id = valid_user(req.userId)
+    if not _keys_modeled(user_id):
+        return ChallengeResponse(keysModeled=False, started=False, windows=0, risk=None)
+    _close_window(user_id, session_id)
+    risks = scoring.challenge(session_id, user_id)
+    if risks is None:
+        scoring.start_challenge(user_id, session_id)
+        return ChallengeResponse(keysModeled=True, started=False, windows=0, risk=None)
+    mean = round(sum(risks) / len(risks), 4) if risks else None
+    log.info("challenge user=%s session=%s… windows=%d risk=%s", user_id, session_id[:8], len(risks), mean)
+    return ChallengeResponse(keysModeled=True, started=True, windows=len(risks), risk=mean)
+
+
+def _risk_response(session_id: str) -> RiskResponse:
     st = scoring.get(session_id)
+    signals = coaching.signals(session_id)  # needs no profile, so reported even when nothing is scored
     if st is None:
-        return RiskResponse(risk=0.0, windows=0, lastUpdated=None, components={})
+        return RiskResponse(risk=0.0, windows=0, lastUpdated=None, components={}, coaching=signals)
     return RiskResponse(
         risk=round(st.risk, 4),
         windows=st.windows,
         lastUpdated=st.last_updated,
         components={k: round(v, 4) for k, v in st.components.items()},
         bot=round(st.bot, 2),
+        coaching=signals,
     )
 
 
