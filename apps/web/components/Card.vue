@@ -1,10 +1,16 @@
 <script setup lang="ts">
-defineProps<{ title?: string }>();
+defineProps<{ title?: string; subtitle?: string }>();
 </script>
 
 <template>
-  <section class="bg-white rounded-xl shadow-sm ring-1 ring-black/5 p-5">
-    <h2 v-if="title" class="font-medium text-gray-900 mb-3">{{ title }}</h2>
+  <section class="card">
+    <header v-if="title || $slots.action" class="mb-4 flex items-start justify-between gap-4">
+      <div>
+        <h2 v-if="title" class="text-lg font-semibold text-ink">{{ title }}</h2>
+        <p v-if="subtitle" class="mt-0.5 text-sm text-ink-muted">{{ subtitle }}</p>
+      </div>
+      <slot name="action" />
+    </header>
     <slot />
   </section>
 </template>
