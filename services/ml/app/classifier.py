@@ -49,7 +49,7 @@ RED_FLAGS = [
     ("too_good", "Offers a prize, reward, or guaranteed return",
      re.compile(r"\b(won|winner|free (phone|tablet|upgrade)|gift card|guarantee|cashback|reward|double your|10x)", re.I)),
     ("new_number", "Someone claiming to be family on a new number",
-     re.compile(r"\b(new (phone|number)|this is my new|dropped my phone|friend'?s phone)", re.I)),
+     re.compile(r"\b(new (phone|number)|this is my new|(dropped|lost|broke) my phone|my phone (broke|died)|friend'?s phone)", re.I)),
     ("off_platform", "Moves the conversation to another app or group",
      re.compile(r"\b(on (our|the) app|on chat|add our|join (our|the) (private )?group|message us on)", re.I)),
 ]
