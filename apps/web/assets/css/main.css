@@ -1,3 +1,99 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-ink-wash text-ink antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1, h2, h3 {
+    @apply font-display tracking-tight;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-nimbus-accent ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer components {
+  /* Surfaces */
+  .card {
+    @apply rounded-2xl border border-ink-line bg-white p-6 shadow-card;
+  }
+  .card-hero {
+    @apply rounded-2xl bg-nimbus-900 p-7 text-white shadow-hero;
+  }
+  .card-link {
+    @apply card block transition hover:-translate-y-0.5 hover:border-nimbus-200 hover:shadow-lift;
+  }
+
+  /* Type */
+  .page-title {
+    @apply font-display text-3xl font-semibold tracking-tight text-ink;
+  }
+  .page-sub {
+    @apply mt-1 text-sm text-ink-muted;
+  }
+  .eyebrow {
+    @apply text-[13px] font-medium text-ink-muted;
+  }
+  .stat {
+    @apply font-display text-4xl font-semibold tracking-tight tabular-nums;
+  }
+  .back-link {
+    @apply inline-flex items-center gap-1 text-sm text-ink-muted hover:text-nimbus;
+  }
+
+  /* Controls */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-nimbus text-white shadow-[0_8px_20px_-10px_rgba(43,45,124,0.8)] hover:bg-nimbus-800;
+  }
+  .btn-accent {
+    @apply btn bg-nimbus-accent text-nimbus-950 hover:bg-cyan-300;
+  }
+  .btn-secondary {
+    @apply btn border border-ink-line bg-white text-ink-soft hover:border-nimbus-200 hover:text-nimbus;
+  }
+  .btn-ghost {
+    @apply btn font-medium text-ink-soft hover:bg-ink-wash;
+  }
+  .btn-danger {
+    @apply btn font-medium text-rose-700 hover:bg-rose-50;
+  }
+  .label {
+    @apply block text-[13px] font-medium text-ink-soft;
+  }
+  .input {
+    @apply mt-1.5 block w-full rounded-xl border border-[#D5D8EA] bg-white px-3.5 py-2.5 text-[15px] text-ink
+      placeholder:text-ink-muted/60 transition focus:border-nimbus focus:shadow-focus focus:outline-none focus:ring-0;
+  }
+  .link {
+    @apply font-semibold text-nimbus hover:text-nimbus-800;
+  }
+
+  /* Feedback */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .notice {
+    @apply flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-sm;
+  }
+  .notice-ok {
+    @apply notice bg-emerald-50 text-emerald-800;
+  }
+  .notice-err {
+    @apply notice bg-rose-50 text-rose-800;
+  }
+
+  /* Overlays */
+  .scrim {
+    @apply fixed inset-0 z-[60] flex animate-fade-in items-center justify-center bg-nimbus-950/60 p-4 backdrop-blur-sm;
+  }
+  .dialog {
+    @apply w-full animate-pop-in rounded-3xl bg-white shadow-modal;
+  }
+}

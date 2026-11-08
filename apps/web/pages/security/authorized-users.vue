@@ -14,30 +14,27 @@ async function add() {
 </script>
 
 <template>
-  <div v-if="data" class="space-y-6 max-w-2xl">
-    <div>
-      <NuxtLink to="/security" class="text-sm text-gray-500 hover:underline">← Security</NuxtLink>
-      <h1 class="text-2xl font-semibold text-nimbus mt-1">Authorized users</h1>
-      <p class="text-sm text-gray-500">Authorized users can make changes and get account information from Nimbus support.</p>
-    </div>
+  <div v-if="data" class="max-w-3xl space-y-5">
+    <PageHeader :back="{ to: '/security', label: 'Security' }" title="Authorized users" subtitle="Authorized users can make changes and get account information from Nimbus support." />
 
     <Card title="Current authorized users">
-      <ul class="divide-y">
-        <li v-for="a in data.authorizedUsers" :key="a.id" class="py-3 flex justify-between text-sm">
-          <span><span class="font-medium">{{ a.name }}</span> <span class="text-gray-500">{{ a.email }}</span></span>
-          <span class="text-gray-500">added {{ shortDate(a.createdAt) }}</span>
+      <ul class="-mx-6 divide-y divide-ink-line border-t border-ink-line">
+        <li v-for="a in data.authorizedUsers" :key="a.id" class="flex items-center gap-3 px-6 py-3.5 text-sm">
+          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-nimbus-50 font-semibold text-nimbus">{{ a.name.charAt(0).toUpperCase() }}</span>
+          <span class="min-w-0 flex-1"><span class="block font-medium">{{ a.name }}</span><span class="block truncate text-ink-muted">{{ a.email }}</span></span>
+          <span class="shrink-0 text-xs text-ink-muted">Added {{ shortDate(a.createdAt) }}</span>
         </li>
-        <li v-if="!data.authorizedUsers.length" class="py-3 text-sm text-gray-500">No authorized users yet.</li>
+        <li v-if="!data.authorizedUsers.length" class="px-6 py-4 text-sm text-ink-muted">No authorized users yet.</li>
       </ul>
     </Card>
 
     <Card title="Add an authorized user">
-      <form class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]" @submit.prevent="add">
-        <input v-model="form.name" required maxlength="80" placeholder="Full name" class="rounded border border-gray-300 px-3 py-2" />
-        <input v-model="form.email" type="email" required placeholder="Email" class="rounded border border-gray-300 px-3 py-2" />
-        <button class="rounded bg-nimbus text-white px-4 py-2 text-sm font-medium">Add</button>
+      <form class="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" @submit.prevent="add">
+        <label class="label">Full name<input v-model="form.name" required maxlength="80" class="input" /></label>
+        <label class="label">Email<input v-model="form.email" type="email" required class="input" /></label>
+        <button class="btn-primary"><Icon name="plus" :size="16" />Add</button>
       </form>
-      <p v-if="msg" class="mt-3 text-sm" :class="msg.ok ? 'text-green-700' : 'text-red-600'">{{ msg.text }}</p>
+      <div class="mt-4"><Notice :msg="msg" /></div>
     </Card>
   </div>
 </template>

@@ -296,9 +296,10 @@ All seeded data is fictional: 555 phone numbers, fake account numbers, fake ICCI
 | Route | Content | Sensitivity tier |
 |---|---|---|
 | `/login` | email + password, TOTP if prompted | n/a |
+| `/signup` | multi-step sign-up (7.3a) | n/a |
 | `/` (Overview) | balance due, lines summary, data usage bars | `view` |
 | `/lines` | per-line cards: plan, device, usage | `view` |
-| `/lines/:id` | rename line, change plan | `standard` |
+| `/lines/:id` | rename line (`standard`), change plan (`critical`) | `standard` / `critical` |
 | `/billing` | bill history, pay bill, toggle autopay | pay/autopay: `elevated` |
 | `/profile` | name, email, address | edit: `elevated` |
 | `/security` | change password, port-out PIN reveal, signed-in devices | `critical` |
@@ -314,6 +315,15 @@ UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2
 2. **Telemetry** (Stage 4): collector running/stopped and pending count, totals per modality plus `synthetic`, a feed of the latest events (key class and `code_hash` only), a trail of recent mouse/touch positions, and the latest batches (transport, bytes, HTTP status, latency, events buffered at ML).
 
 The meter only displays; it never decides (principle 1). `/api/risk` returns `{risk, windows, lastUpdated, components, bot, thresholds, decisions, criticalRisk, mlAvailable, profileActive, stepUpActive}`, where `decisions` maps each tier to `allow | step_up | deny` as computed server-side by the same pure function `requireTrust` uses (7.4, steps 2–5, without side effects). The status label is the `critical` decision, e.g. "SIM swap would require step-up". The overlay draws the threshold markers from the `thresholds` the server returns, so `POLICY_THRESHOLDS_JSON` overrides show up live.
+
+### 7.3a Sign-up (`/signup`)
+
+Five steps: login (name, email, password) → service address → line (plan, line name, 6-digit port-out PIN, typed twice) → review and a typed e-signature (full name plus a fixed statement, paste blocked) → authenticator.
+
+- The login is created first (`signUp.email` signs in), so steps 2 to 5 are typed inside a session and the collector feeds passive enrollment (8.1) with roughly 150 to 200 keystrokes, about the 8 typing windows a profile needs. Step 1 is typed before a session exists and is not collected. Only timing and key class are collected, as everywhere (principle 3).
+- `POST /api/signup/account` creates the `CustomerAccount` with one line and a first bill (fictional account number, `(214) 555-01xx` number, `8999` ICCID). It is create-only (409 if an account exists), so it needs no trust tier.
+- The authenticator step re-asks for the password (`twoFactor.enable`), shows the `otpauth` QR code (rendered client-side with `uqr`) and the manual key, and finishes with `twoFactor.verifyTotp`, which sets `twoFactorEnabled`. Backup codes are shown once.
+- `GET /api/signup/status` returns `{hasAccount, twoFactor, complete}`. `/signup` resumes an unfinished sign-up at the right step, and `/login` sends a user signed in without an authenticator to `/signup`.
 
 ### 7.4 Policy (`server/lib/policy.ts`)
 
@@ -374,7 +384,7 @@ Many carrier scams end with the real owner making the change: a caller posing as
 - `/messages` shows each verdict in words ("Scam very likely", "Be careful"), with the category, advice, and red flags. It also gives the percentage and says the filter can be wrong.
 - If ML is down, a message is delivered marked "not checked", never shown as "ok".
 - **Feeding the scam pause.** A recent `accountRisk` scam (fake carrier support, code theft, transfer-PIN request, SIM deactivation, bank alert) raises the coaching score, unless the customer marked it "not a scam". That ties the text to the account action it is setting up.
-- **Privacy.** Every message is synthetic. In a real deployment classification would run on the phone, and only the verdict and category, never the text, would reach the carrier. `/classify` scores a text and keeps nothing.
+- **Privacy.** Every message is synthetic. Classification runs in the ML service; `/classify` scores a text and keeps nothing. Stored messages hold the text and its verdict for the inbox.
 
 ## 8. ML service (services/ml)
 

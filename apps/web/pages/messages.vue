@@ -1,20 +1,7 @@
 <script setup lang="ts">
 // Texts with scam verdicts (ARCHITECTURE.md 7.6). The server classifies; this page only shows the result.
-type Msg = {
-  id: string;
-  sender: string;
-  body: string;
-  receivedAt: string;
-  verdict: "scam" | "suspicious" | "ok";
-  scamProbability: number;
-  categoryLabel: string | null;
-  advice: string | null;
-  redFlags: { id: string; label: string }[];
-  customerVerdict: "reported" | "not_scam" | null;
-};
-
 const { demoMode } = useRuntimeConfig().public;
-const { data: messages, refresh } = await useFetch<Msg[]>("/api/messages", { key: "messages" });
+const { data: messages, refresh } = await useMessages();
 const open = ref<string | null>(null);
 
 const ago = (d: string) => {
@@ -23,8 +10,15 @@ const ago = (d: string) => {
 };
 // The model's confidence in words: honest about the band, without a false-precision percentage up front.
 const confidence = (p: number) => (p >= 0.9 ? "very likely" : p >= 0.5 ? "likely" : "possibly");
+// What the row shows: a dismissed flag reads as an ordinary text.
+const level = (m: InboxMessage) => (m.customerVerdict === "not_scam" || m.verdict === "ok" ? "ok" : m.verdict);
+const LEVEL = {
+  ok: { avatar: "bg-ink-wash text-ink-muted", chip: "", panel: "" },
+  suspicious: { avatar: "bg-amber-100 text-amber-800", chip: "bg-amber-100 text-amber-900", panel: "border-amber-200 bg-amber-50" },
+  scam: { avatar: "bg-rose-100 text-rose-700", chip: "bg-rose-100 text-rose-800", panel: "border-rose-200 bg-rose-50" },
+} as const;
 
-async function feedback(m: Msg, action: "report" | "not_scam") {
+async function feedback(m: InboxMessage, action: "report" | "not_scam") {
   await $fetch(`/api/messages/${m.id}`, { method: "POST", body: { action } });
   await refresh();
 }
@@ -51,63 +45,64 @@ async function simulate() {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-semibold text-nimbus">Messages</h1>
-      <p class="mt-1 text-sm text-gray-600">
-        Nimbus Scam Shield checks incoming texts for scams. In this demo the texts are synthetic. On a real phone the check
-        would run on the device and Nimbus would never see your messages.
-      </p>
-    </div>
+  <div class="space-y-5">
+    <PageHeader
+      title="Messages"
+      subtitle="Nimbus Scam Shield checks incoming texts for scams. In this demo the texts are synthetic."
+    />
 
-    <Card v-if="demoMode" title="Demo: receive a text">
-      <form class="flex flex-col gap-2 sm:flex-row" @submit.prevent="simulate">
-        <input v-model="sender" aria-label="Sender" class="rounded-lg border border-gray-300 px-3 py-2 text-sm sm:w-44" />
-        <input v-model="body" aria-label="Message text" placeholder="Type any message…" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-        <button :disabled="sending || !body.trim()" class="rounded-lg bg-nimbus px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-          {{ sending ? "Checking…" : "Receive" }}
-        </button>
+    <Card v-if="demoMode" title="Demo: receive a text" subtitle="Type any message and see how Scam Shield screens it.">
+      <form class="flex flex-col gap-3 sm:flex-row" @submit.prevent="simulate">
+        <input v-model="sender" aria-label="Sender" class="input !mt-0 sm:w-44" />
+        <input v-model="body" aria-label="Message text" placeholder="Type any message…" class="input !mt-0 flex-1" />
+        <button :disabled="sending || !body.trim()" class="btn-primary">{{ sending ? "Checking…" : "Receive" }}</button>
       </form>
-      <p v-if="sendErr" class="mt-2 text-sm text-red-600">{{ sendErr }}</p>
+      <p v-if="sendErr" class="notice-err mt-3" role="alert">{{ sendErr }}</p>
     </Card>
 
-    <ul class="divide-y rounded-xl border border-gray-200 bg-white">
-      <li v-for="m in messages ?? []" :key="m.id" class="p-4">
-        <button class="flex w-full items-start gap-3 text-left" :aria-expanded="open === m.id" @click="open = open === m.id ? null : m.id">
-          <span
-            class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-            :class="m.customerVerdict === 'not_scam' || m.verdict === 'ok' ? 'bg-gray-300' : m.verdict === 'scam' ? 'bg-red-500' : 'bg-amber-400'"
-            aria-hidden="true"
-          />
+    <ul class="overflow-hidden rounded-2xl border border-ink-line bg-white shadow-card">
+      <li v-for="m in messages ?? []" :key="m.id" class="border-b border-ink-line last:border-b-0">
+        <button
+          class="flex w-full items-start gap-4 px-5 py-4 text-left transition hover:bg-ink-wash/60"
+          :class="open === m.id ? 'bg-ink-wash/60' : ''"
+          :aria-expanded="open === m.id"
+          @click="open = open === m.id ? null : m.id"
+        >
+          <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full" :class="LEVEL[level(m)].avatar">
+            <Icon :name="level(m) === 'ok' ? 'chat' : 'alert'" :size="18" />
+          </span>
           <span class="min-w-0 flex-1">
             <span class="flex items-baseline justify-between gap-2">
-              <span class="font-medium">{{ m.sender }}</span>
-              <span class="shrink-0 text-xs text-gray-500">{{ ago(m.receivedAt) }}</span>
+              <span class="font-semibold">{{ m.sender }}</span>
+              <span class="shrink-0 text-xs text-ink-muted">{{ ago(m.receivedAt) }}</span>
             </span>
-            <span class="mt-0.5 block text-sm text-gray-700" :class="open === m.id ? '' : 'line-clamp-2'">{{ m.body }}</span>
-            <span v-if="m.verdict !== 'ok' && m.customerVerdict !== 'not_scam'" class="mt-1 inline-block rounded px-1.5 py-0.5 text-xs font-medium"
-              :class="m.verdict === 'scam' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'">
-              {{ m.verdict === "scam" ? `Scam ${confidence(m.scamProbability)}` : "Be careful" }}<template v-if="m.categoryLabel"> · {{ m.categoryLabel }}</template>
+            <span class="mt-0.5 block text-sm text-ink-soft" :class="open === m.id ? '' : 'line-clamp-2'">{{ m.body }}</span>
+            <span class="mt-2 flex flex-wrap items-center gap-2">
+              <span v-if="level(m) !== 'ok'" class="badge" :class="LEVEL[level(m)].chip">
+                {{ m.verdict === "scam" ? `Scam ${confidence(m.scamProbability)}` : "Be careful" }}<template v-if="m.categoryLabel"> · {{ m.categoryLabel }}</template>
+              </span>
+              <span v-if="m.customerVerdict === 'reported'" class="badge bg-ink-wash text-ink-muted"><Icon name="check" :size="12" />Reported</span>
             </span>
-            <span v-if="m.customerVerdict === 'reported'" class="ml-1 text-xs text-gray-500">Reported</span>
           </span>
         </button>
 
-        <div v-if="open === m.id && m.verdict !== 'ok'" class="ml-5 mt-3 rounded-lg p-3 text-sm" :class="m.verdict === 'scam' ? 'bg-red-50' : 'bg-amber-50'">
-          <p v-if="m.advice" class="font-medium text-gray-900">{{ m.advice }}</p>
-          <ul v-if="m.redFlags.length" class="mt-2 list-disc space-y-0.5 pl-5 text-gray-700">
-            <li v-for="f in m.redFlags" :key="f.id">{{ f.label }}</li>
-          </ul>
-          <p class="mt-2 text-xs text-gray-500">
-            Scam Shield is {{ Math.round(m.scamProbability * 100) }}% confident. It can be wrong, so check with Nimbus directly if unsure.
-          </p>
-          <div v-if="!m.customerVerdict" class="mt-3 flex gap-2">
-            <button class="rounded-lg bg-nimbus px-3 py-1.5 text-xs font-medium text-white" @click="feedback(m, 'report')">Report scam</button>
-            <button class="rounded-lg px-3 py-1.5 text-xs text-gray-600 hover:bg-white" @click="feedback(m, 'not_scam')">It's not a scam</button>
+        <div v-if="open === m.id && m.verdict !== 'ok'" class="px-5 pb-5 sm:pl-[4.75rem]">
+          <div class="rounded-xl border p-4 text-sm" :class="LEVEL[m.verdict].panel">
+            <p v-if="m.advice" class="font-semibold text-ink">{{ m.advice }}</p>
+            <ul v-if="m.redFlags.length" class="mt-3 space-y-1.5 text-ink-soft">
+              <li v-for="f in m.redFlags" :key="f.id" class="flex items-start gap-2"><Icon name="alert" :size="16" class="mt-0.5 text-ink-muted" />{{ f.label }}</li>
+            </ul>
+            <p class="mt-3 text-xs text-ink-muted">
+              Scam Shield is {{ Math.round(m.scamProbability * 100) }}% confident. It can be wrong, so check with Nimbus directly if unsure.
+            </p>
+            <div v-if="!m.customerVerdict" class="mt-4 flex flex-wrap gap-2">
+              <button class="btn-primary !py-2 text-xs" @click="feedback(m, 'report')">Report scam</button>
+              <button class="btn-secondary !py-2 text-xs" @click="feedback(m, 'not_scam')">It's not a scam</button>
+            </div>
           </div>
         </div>
       </li>
-      <li v-if="messages && !messages.length" class="p-4 text-sm text-gray-500">No messages.</li>
+      <li v-if="messages && !messages.length" class="px-5 py-10 text-center text-sm text-ink-muted">No messages.</li>
     </ul>
   </div>
 </template>

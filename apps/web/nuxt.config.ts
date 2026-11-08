@@ -15,7 +15,16 @@ export default defineNuxtConfig({
     },
   },
   app: {
-    head: { title: "Nimbus Mobile" },
+    head: {
+      title: "Nimbus Mobile",
+      htmlAttrs: { lang: "en" },
+      meta: [{ name: "theme-color", content: "#0E0F2E" }],
+      link: [
+        { rel: "preconnect", href: "https://fonts.googleapis.com" },
+        { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" },
+        { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" },
+      ],
+    },
   },
   // Serve the built collector (zero-dependency ES modules) at /collector/* for non-Nuxt pages,
   // e.g. public/demo-vanilla.html loads /collector/adapters/vanilla.js.

@@ -1,4 +1,4 @@
-// Rename a line and/or change its plan. Tier: standard.
+// Rename a line and/or change its plan. Tier: standard for a rename, critical when the plan changes.
 import { z } from "zod";
 import { prisma } from "../../../lib/prisma";
 import { requireAccount, readInput } from "../../../lib/session";
@@ -13,9 +13,9 @@ const Input = z
   .refine((v) => v.nickname !== undefined || v.plan !== undefined, "Nothing to update");
 
 export default defineEventHandler(async (event) => {
-  await requireTrust(event, "standard");
-  const { account } = await requireAccount(event);
   const input = await readInput(event, Input);
+  await requireTrust(event, input.plan !== undefined ? "critical" : "standard");
+  const { account } = await requireAccount(event);
 
   const id = getRouterParam(event, "id")!;
   const { count } = await prisma.line.updateMany({ where: { id, accountId: account.id }, data: input });
