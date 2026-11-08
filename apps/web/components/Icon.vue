@@ -23,6 +23,7 @@ const PATHS = {
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   menu: "M4 6h16M4 12h16M4 18h16",
   wifi: "M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01",
+  reset: "M3 12a9 9 0 1 0 2.6-6.4L3 8M3 3v5h5",
 } as const;
 const props = defineProps<{ name: keyof typeof PATHS; label?: string; size?: number }>();
 </script>
