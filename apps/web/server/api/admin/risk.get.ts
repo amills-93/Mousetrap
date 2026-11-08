@@ -41,6 +41,7 @@ export default defineEventHandler(async (event) => {
         profileActive: input.profileActive,
         stepUpUntil: trustBy.get(s.id)?.stepUpUntil ?? null,
         failedStepUp: trustBy.get(s.id)?.failedStepUp ?? 0,
+        lockedAt: trustBy.get(s.id)?.lockedAt ?? null,
         // Oldest first for the timeline.
         events: mine
           .slice(0, 200)

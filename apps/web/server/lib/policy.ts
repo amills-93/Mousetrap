@@ -45,6 +45,7 @@ export interface TrustInput {
   windows: number; // windows ML has scored this session
   profileActive: boolean; // BiometricProfile.status === "active"
   stepUpActive: boolean; // SessionTrust.stepUpUntil > now
+  locked: boolean; // SessionTrust.lockedAt set by an earlier deny
 }
 
 // The risk the thresholds are compared against, after the unknown-risk rule (7.4 step 4).
@@ -57,6 +58,7 @@ export function effectiveRisk(input: TrustInput, tier: Tier): number {
 
 // 7.4 steps 2-5 plus the threshold comparison, with no side effects.
 export function decide(input: TrustInput, tier: Tier, t: Thresholds = thresholds()): Decision {
+  if (input.locked) return tier === "view" ? "allow" : "deny"; // a deny is sticky for the session
   if (!input.profileActive) return input.stepUpActive || tier !== "critical" ? "allow" : "step_up";
   const risk = effectiveRisk(input, tier);
   // Deny wins even inside the step-up window: a fresh code does not excuse behavior that keeps looking foreign.
