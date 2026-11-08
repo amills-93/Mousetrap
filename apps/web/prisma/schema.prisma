@@ -80,11 +80,26 @@ model StepUpFactor {
   secret String // demo only; fallback path
 }
 
+// A critical action paused by the scam check (ARCHITECTURE.md 7.5). pending: warning shown; cancelled: the
+// customer said someone asked them to; held: they chose to wait until releaseAt; used: released and performed.
+model ScamHold {
+  id        String    @id @default(cuid())
+  userId    String
+  sessionId String
+  route     String
+  status    String    @default("pending")
+  reasons   String    @default("") // "|"-separated coachingScore() reasons, for /admin/risk only
+  releaseAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, route])
+}
+
 model RiskEvent {
   id        String   @id @default(cuid())
   userId    String
   sessionId String
-  type      String // "score" | "allow" | "step_up" | "deny" | "stepup_ok" | "stepup_failed" | "typing_ok" | "typing_failed"
+  type      String // "score" | "allow" | "step_up" | "deny" | "stepup_ok" | "stepup_failed" | "typing_ok" | "typing_failed" | "pause" | "pause_reported" | "pause_held"
   tier      String?
   risk      Float?
   route     String?

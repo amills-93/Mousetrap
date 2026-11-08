@@ -4,7 +4,7 @@
 import type { CollectorEvent } from "@mousetrap-auth/collector";
 
 type Tier = "view" | "standard" | "elevated" | "critical";
-type Decision = "allow" | "step_up" | "deny";
+type Decision = "allow" | "step_up" | "pause" | "deny";
 interface RiskView {
   risk: number | null;
   windows: number;
@@ -16,6 +16,7 @@ interface RiskView {
   mlAvailable: boolean;
   profileActive: boolean;
   stepUpActive: boolean;
+  coaching: { score: number; reasons: string[] };
   enrollment: { windows: number; target: number; keyWindows: number; keyTarget: number } | null;
 }
 
@@ -43,8 +44,8 @@ onMounted(() => {
 onBeforeUnmount(() => clearInterval(riskTimer));
 
 const TIER_LABELS: Record<Tier, string> = { view: "view", standard: "standard", elevated: "elevated", critical: "critical" };
-const DECISION_CLASS = { allow: "text-emerald-400", step_up: "text-amber-300", deny: "text-red-400" } as const;
-const DECISION_TEXT = { allow: "allow", step_up: "step-up", deny: "deny" } as const;
+const DECISION_CLASS = { allow: "text-emerald-400", step_up: "text-amber-300", pause: "text-violet-300", deny: "text-red-400" } as const;
+const DECISION_TEXT = { allow: "allow", step_up: "step-up", pause: "pause", deny: "deny" } as const;
 
 const meter = computed(() => {
   const r = riskView.value;
@@ -55,7 +56,12 @@ const meter = computed(() => {
   // Color bands come from the server's thresholds; the decision text comes from the server's decisions.
   const level = r.risk === null ? "none" : r.risk >= lowDeny ? "red" : r.risk >= lowStepUp ? "amber" : "green";
   const critical = r.decisions.critical;
-  const status = critical === "allow" ? "SIM swap allowed" : critical === "step_up" ? "SIM swap would require step-up" : "SIM swap would sign you out";
+  const status = {
+    allow: "SIM swap allowed",
+    step_up: "SIM swap would require step-up",
+    pause: "SIM swap would pause: scam check",
+    deny: "SIM swap would sign you out",
+  }[critical];
   let reason = "";
   if (r.stepUpActive) reason = "recently verified";
   else if (r.enrollment) reason = "learning profile";
@@ -72,6 +78,7 @@ const meter = computed(() => {
     windows: r.windows,
     components: Object.entries(r.components) as [string, number][],
     bot: r.bot,
+    coaching: r.coaching,
     enrollment: r.enrollment,
     profileActive: r.profileActive,
     tiers: tiers.map((t) => ({ tier: t, ...r.thresholds[t], decision: r.decisions[t] })),
@@ -214,6 +221,9 @@ const statusClass = (s?: number) =>
             {{ meter.windows }} windows
             <span v-for="[m, v] in meter.components" :key="m"> · {{ m }} {{ v.toFixed(2) }}</span>
             <span v-if="meter.bot" class="text-red-400"> · bot +{{ meter.bot.toFixed(1) }}</span>
+          </p>
+          <p v-if="meter.coaching" class="mt-0.5" :class="meter.coaching.score >= 0.5 ? 'text-violet-300' : 'text-gray-400'">
+            coaching {{ meter.coaching.score.toFixed(2) }}<span v-if="meter.coaching.reasons.length"> · {{ meter.coaching.reasons.join(" · ") }}</span>
           </p>
           <p v-if="meter.enrollment" class="mt-0.5 text-cyan-300">
             learning · {{ meter.enrollment.windows }}/{{ meter.enrollment.target }} windows ·

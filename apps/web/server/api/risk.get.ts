@@ -7,8 +7,8 @@ import { loadTrust } from "../lib/trust";
 
 export default defineEventHandler(async (event) => {
   const { user, session } = await requireSession(event);
-  const [{ input, ml }, status] = await Promise.all([
-    loadTrust(user.id, session.id),
+  const [{ input, ml, coaching }, status] = await Promise.all([
+    loadTrust(user.id, session.id, { sessionCreatedAt: session.createdAt }),
     mlUserStatus(user.id).catch(() => null),
   ]);
   const t = thresholds();
@@ -25,6 +25,7 @@ export default defineEventHandler(async (event) => {
     mlAvailable: ml !== null,
     profileActive: input.profileActive,
     stepUpActive: input.stepUpActive,
+    coaching, // {score, reasons}: the overlay is demo-only, so it may show what the customer-facing pause hides
     // Passive enrollment progress (lib/enroll.ts), shown only in the demo overlay.
     enrollment: status?.enrolling
       ? { windows: status.enrollWindows, target: status.enrollTarget, keyWindows: status.enrollKeyWindows, keyTarget: status.enrollKeyTarget }

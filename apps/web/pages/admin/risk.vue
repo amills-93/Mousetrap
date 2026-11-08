@@ -12,7 +12,8 @@ type Row = {
   windows: number;
   components: Record<string, number>;
   bot: number;
-  critical: "allow" | "step_up" | "deny";
+  critical: "allow" | "step_up" | "pause" | "deny";
+  coaching: { score: number; reasons: string[] };
   profileActive: boolean;
   stepUpUntil: string | null;
   failedStepUp: number;
@@ -42,13 +43,16 @@ const DECISION = {
   allow: "bg-emerald-100 text-emerald-800",
   step_up: "bg-amber-100 text-amber-800",
   deny: "bg-red-100 text-red-800",
+  pause: "bg-violet-100 text-violet-800",
+  pause_reported: "bg-violet-100 text-violet-800",
+  pause_held: "bg-violet-100 text-violet-800",
   stepup_ok: "bg-sky-100 text-sky-800",
   stepup_failed: "bg-red-100 text-red-800",
   typing_ok: "bg-sky-100 text-sky-800",
   typing_failed: "bg-red-100 text-red-800",
   score: "bg-gray-100 text-gray-600",
 } as Record<string, string>;
-const LABEL: Record<string, string> = { allow: "allow", step_up: "step-up", deny: "deny", stepup_ok: "verified", stepup_failed: "wrong code", typing_ok: "typing ok", typing_failed: "typing mismatch", score: "score" };
+const LABEL: Record<string, string> = { allow: "allow", step_up: "step-up", pause: "pause", pause_reported: "reported scam", pause_held: "held", deny: "deny", stepup_ok: "verified", stepup_failed: "wrong code", typing_ok: "typing ok", typing_failed: "typing mismatch", score: "score" };
 
 const riskClass = (r: number | null) => {
   const t = data.value?.critical;
@@ -73,7 +77,7 @@ const chart = computed(() => {
     y,
   };
 });
-const MARK_FILL: Record<string, string> = { allow: "#10b981", step_up: "#f59e0b", deny: "#ef4444" };
+const MARK_FILL: Record<string, string> = { allow: "#10b981", step_up: "#f59e0b", pause: "#8b5cf6", deny: "#ef4444" };
 </script>
 
 <template>
@@ -115,6 +119,7 @@ const MARK_FILL: Record<string, string> = { allow: "#10b981", step_up: "#f59e0b"
               <td class="py-1.5 pr-3 font-mono text-xs text-gray-600">
                 <span v-for="(v, k) in s.components" :key="k" class="mr-2">{{ k }} {{ v.toFixed(2) }}</span>
                 <span v-if="s.bot" class="text-red-600">bot +{{ s.bot.toFixed(1) }}</span>
+                <span v-if="s.coaching.score" class="text-violet-700" :title="s.coaching.reasons.join(', ')">coaching {{ s.coaching.score.toFixed(2) }}</span>
               </td>
               <td class="py-1.5 pr-3"><span class="rounded px-1.5 py-0.5 text-xs" :class="DECISION[s.critical]">{{ LABEL[s.critical] }}</span></td>
               <td class="py-1.5 text-xs text-gray-500">

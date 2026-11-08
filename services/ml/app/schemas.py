@@ -54,13 +54,23 @@ class FocusEvent(_Event):
     role: Annotated[str, Field(max_length=40)]
 
 
+class PasteEvent(_Event):
+    k: Literal["ps"]
+    role: Annotated[str, Field(max_length=40)]
+
+
+class VisibilityEvent(_Event):
+    k: Literal["vs"]
+    hidden: bool
+
+
 class NavEvent(_Event):
     k: Literal["nv"]
     route: Annotated[str, Field(max_length=200)]
 
 
 CollectorEvent = Annotated[
-    Union[KeyEvent, MoveEvent, ButtonEvent, WheelEvent, TouchEvent, FocusEvent, NavEvent],
+    Union[KeyEvent, MoveEvent, ButtonEvent, WheelEvent, TouchEvent, FocusEvent, NavEvent, PasteEvent, VisibilityEvent],
     Field(discriminator="k"),
 ]
 
@@ -124,6 +134,8 @@ class RiskResponse(BaseModel):
     lastUpdated: float | None  # unix seconds of the last scored window
     components: dict[str, float]  # per-modality EWMA: keys, mouse, touch (only those seen)
     bot: float = 0.0  # bot-heuristic penalty on the last window
+    # coaching.py counts: pastes, tabSwitches, longPauses, chunkedDigits (last 3 min) and navs (this session)
+    coaching: dict[str, int] = {}
 
 
 class ChallengeResponse(BaseModel):

@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   const rows = await Promise.all(
     sessions.map(async (s) => {
-      const { input, ml } = await loadTrust(s.userId, s.id);
+      const { input, ml, coaching } = await loadTrust(s.userId, s.id, { sessionCreatedAt: s.createdAt });
       const mine = events.filter((e) => e.sessionId === s.id);
       return {
         id: short(s.id),
@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
         components: ml?.components ?? {},
         bot: ml?.bot ?? 0,
         critical: decide(input, "critical"),
+        coaching,
         profileActive: input.profileActive,
         stepUpUntil: trustBy.get(s.id)?.stepUpUntil ?? null,
         failedStepUp: trustBy.get(s.id)?.failedStepUp ?? 0,
