@@ -16,6 +16,7 @@ type Row = {
   profileActive: boolean;
   stepUpUntil: string | null;
   failedStepUp: number;
+  lockedAt: string | null;
   events: { type: string; tier: string | null; risk: number | null; route: string | null; at: string }[];
 };
 
@@ -118,6 +119,7 @@ const MARK_FILL: Record<string, string> = { allow: "#10b981", step_up: "#f59e0b"
               <td class="py-1.5 text-xs text-gray-500">
                 <span v-if="s.stepUpUntil && new Date(s.stepUpUntil) > new Date()">verified until {{ time(s.stepUpUntil) }}</span>
                 <span v-if="s.failedStepUp" class="text-red-600"> {{ s.failedStepUp }} failed</span>
+                <span v-if="s.lockedAt" class="text-red-600"> locked {{ time(s.lockedAt) }}</span>
               </td>
             </tr>
             <tr v-if="data && !data.sessions.length"><td colspan="8" class="py-3 text-gray-500">No active sessions.</td></tr>

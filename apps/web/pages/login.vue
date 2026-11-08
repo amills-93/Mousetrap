@@ -11,9 +11,8 @@ const busy = ref(false);
 
 const { data: session } = await useAuthSession();
 
-// Set by signedOut() when the server revoked the session (deny, or too many failed step-ups).
+// Set by signedOut() when the server revoked the session (too many failed step-ups).
 const SIGNED_OUT: Record<string, string> = {
-  risk: "You were signed out because this session no longer looked like the account owner.",
   stepup_failed: "You were signed out after too many incorrect verification codes.",
 };
 const signedOutReason = computed(() => SIGNED_OUT[String(route.query.reason)] ?? "");

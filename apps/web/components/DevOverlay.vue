@@ -16,6 +16,7 @@ interface RiskView {
   mlAvailable: boolean;
   profileActive: boolean;
   stepUpActive: boolean;
+  locked: boolean;
 }
 
 const { $collector: collector, $collectorDebug: debug } = useNuxtApp();
@@ -54,9 +55,10 @@ const meter = computed(() => {
   // Color bands come from the server's thresholds; the decision text comes from the server's decisions.
   const level = r.risk === null ? "none" : r.risk >= lowDeny ? "red" : r.risk >= lowStepUp ? "amber" : "green";
   const critical = r.decisions.critical;
-  const status = critical === "allow" ? "SIM swap allowed" : critical === "step_up" ? "SIM swap would require step-up" : "SIM swap would sign you out";
+  const status = critical === "allow" ? "SIM swap allowed" : critical === "step_up" ? "SIM swap would require step-up" : "SIM swap blocked";
   let reason = "";
-  if (r.stepUpActive) reason = "recently verified";
+  if (r.locked) reason = "session locked";
+  else if (r.stepUpActive) reason = "recently verified";
   else if (!r.profileActive) reason = "not enrolled";
   else if (!r.mlAvailable) reason = "ML unavailable";
   else if (r.criticalRisk !== r.risk) reason = `warming up: judged as ${r.criticalRisk.toFixed(2)}`;
