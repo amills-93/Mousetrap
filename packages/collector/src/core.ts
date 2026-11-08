@@ -47,14 +47,21 @@ export function keyClass(code: string): KeyClass {
   return "other";
 }
 
-// FNV-1a over KeyboardEvent.code, folded to 16 bits. Stable per physical key, only used for pairing.
-export function codeHash(code: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < code.length; i++) {
-    h ^= code.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return ((h >>> 16) ^ h) & 0xffff;
+// Per-collector random 16-bit ID for each KeyboardEvent.code, drawn on first use and never sent.
+// IDs are only compared with each other (pair keydown/keyup, match key pairs within a window), so they
+// reveal which keys repeat but not which keys they are: no lookup table or salt to brute-force.
+export function codeIds(): (code: string) => number {
+  const ids = new Map<string, number>();
+  const used = new Set<number>();
+  return (code) => {
+    let id = ids.get(code);
+    if (id === undefined) {
+      do id = crypto.getRandomValues(new Uint16Array(1))[0]; while (used.has(id));
+      ids.set(code, id);
+      used.add(id);
+    }
+    return id;
+  };
 }
 
 // Element kind for focus events: tag plus input type / ARIA role. Never the value, name, or id.
@@ -82,6 +89,7 @@ export function createCollector(opts: CollectorOptions = {}): Collector {
   const throttleMs = opts.mouseThrottleMs ?? 20;
 
   const pageId = uuid();
+  const codeHash = codeIds();
   let seq = 0;
   let events: CollectorEvent[] = [];
   let synthetic = 0;

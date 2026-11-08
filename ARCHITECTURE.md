@@ -159,7 +159,7 @@ interface TelemetryBatch {
 ```
 
 - `t` is `performance.now()` rounded to 0.1 ms.
-- `code_hash` is a small stable hash of `KeyboardEvent.code` (not `key`), used only to pair keydown/keyup and compute digraph timing per physical key pair. Never send `key` or input values.
+- `code_hash` is a random 16-bit ID the collector draws for each `KeyboardEvent.code` (not `key`) on first use and never sends the mapping. IDs are stable only within one collector instance (a page load, or the whole SPA visit), which is all pairing keydown/keyup and per-window digraph timing need. A deterministic hash would not do: with only ~100 possible codes, a lookup table would rebuild what was typed. Never send `key` or input values.
 - Ignore synthetic events (`event.isTrusted === false`) but count them; send a `synthetic` counter in the batch for bot detection.
 - Mouse events (`mm`/`md`/`mu`) come from pointer events with `pointerType === "mouse"`, so the emulated mouse events browsers fire after a tap never reach the mouse modality. Pen input is ignored.
 - Touch events (`ts`/`tm`/`te`) come from `TouchEvent`, not pointer events, because the browser cancels pointer streams once it starts scrolling and swipes are most of the touch signal. One event per changed touch point: `id` is `Touch.identifier & 0xffff` (pairs start/move/end within a gesture), `r` is contact radius in px (max of `radiusX`/`radiusY`), `f` is `force` 0..1 (0 where unsupported, e.g. most iOS).
