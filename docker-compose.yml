@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: mousetrap
       POSTGRES_DB: mousetrap
     ports:
-      - "5432:5432" # exposed for host-side prisma/dev; remove on the demo host
+      - "127.0.0.1:5432:5432" # host-side prisma/dev only; never reachable from outside the machine
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -39,12 +39,29 @@ services:
       NUXT_ML_INTERNAL_KEY: ${ML_INTERNAL_KEY}
       NUXT_PUBLIC_DEMO_MODE: ${DEMO_MODE}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000" # direct access for local dev; on the demo host traffic comes through caddy
     depends_on:
       postgres:
         condition: service_healthy
       ml:
         condition: service_healthy
+
+  # Demo host only: docker compose --profile deploy up -d   (needs DOMAIN in .env; see deploy/deploy.sh)
+  caddy:
+    image: caddy:2.8-alpine
+    profiles: ["deploy"]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
 
   # One-off: docker compose run --rm seed  (applies migrations, then seeds demo users and prints TOTP QR codes)
   seed:
@@ -62,3 +79,5 @@ services:
 volumes:
   pgdata:
   mlmodels:
+  caddy_data:
+  caddy_config:
