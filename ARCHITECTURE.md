@@ -83,7 +83,7 @@ Nuxt --POST {ML_URL}/ingest (X-Internal-Key)--> ML service
 ML: append events to session buffer -> build windows -> score -> update EWMA
 ```
 
-- Collector flushes every 3 s or 200 events, whichever first, plus `navigator.sendBeacon` on `pagehide`.
+- Collector flushes every 3 s or 200 events, whichever first, plus `navigator.sendBeacon` on `pagehide`. `trustedFetch()` also awaits `flush()` (capped at 1 s) before every gated request, so the typing on the form itself reaches ML first.
 - Each batch carries `seq` (monotonic per page load) and `pageId` (random UUID per load). Nuxt drops batches with non-increasing `seq` for a `pageId` (basic replay guard).
 - Nuxt rejects telemetry with no valid session (401). Unauthenticated pages (login) do not collect.
 
@@ -92,20 +92,20 @@ ML: append events to session buffer -> build windows -> score -> update EWMA
 ```
 Browser --POST /api/account/sim-swap--> Nuxt
 Nuxt: requireTrust(event, "critical")
-  -> GET {ML_URL}/risk/{sessionId}
+  -> POST {ML_URL}/risk/{sessionId}/close   (scores the open window, then returns risk)
   -> policy decision
      allow    -> perform action
      step_up  -> 403 {action:"step_up", challengeId}
-     deny     -> revoke session, 401 {action:"logout"}
+     deny     -> revoke session, 401 {action:"logout"} with no reason (the user is not told why)
 Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry original action
 ```
 
 ### 5.3 Step-up success
 
 - `/api/stepup/verify` checks the code with Better Auth's own `verifyTOTP` against the active session (same authenticator entry as sign-in; with a session it creates no new session and applies no lockout). The `otplib` / `StepUpFactor` fallback is unused.
-- Mark session `stepUpUntil = now + 5 min` (stored in `SessionTrust` table, keyed by Better Auth session id).
-- Call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
-- Within the `stepUpUntil` window, `requireTrust` returns `allow` for tiers up to `critical`.
+- Mark session `stepUpUntil = now + 60 s` (stored in `SessionTrust` table, keyed by Better Auth session id).
+- If ML had scored at least `MIN_WINDOWS` (3) windows of the session, call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. A step-up forced only by missing telemetry sends no feedback: it is passed with the same TOTP used to sign in, so it says nothing about whose windows those are. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
+- Within the `stepUpUntil` window, `requireTrust` skips step-up for every tier, but a risk at or above a tier's `deny` threshold still revokes the session.
 
 ### 5.4 Step-up failure
 
@@ -155,7 +155,7 @@ interface TelemetryBatch {
 
 ```ts
 const c = createCollector({ endpoint: "/api/telemetry", flushMs: 3000, maxBatch: 200 });
-c.start(); c.stop(); c.flush(); c.setRoute(path);
+c.start(); c.stop(); await c.flush(); c.setRoute(path); // flush() settles when all in-flight batches have
 ```
 
 - Optional observability hooks `onEvent(e)` and `onBatch(info)` (seq, event count, counts per kind, bytes, transport, HTTP status, latency, response) see exactly what is sent and nothing more. The DevOverlay (7.3) uses them; production builds leave them unset.
@@ -304,8 +304,8 @@ const THRESHOLDS: Record<Tier, { stepUp: number; deny: number }> = {
 `requireTrust(event, tier)`:
 
 1. Resolve session; if none, 401.
-2. If `SessionTrust.stepUpUntil > now`, allow.
-3. Fetch `/risk/{sessionId}` from ML (timeout 300 ms).
+2. If `SessionTrust.stepUpUntil > now`, allow unless risk reaches the tier's `deny` threshold (checked in step 6).
+3. Fetch `POST /risk/{sessionId}/close` from ML (timeout 300 ms): ML first scores the session's open window, so a fast attacker's last few seconds of input count. `/api/risk` uses the read-only `GET /risk/{sessionId}`.
 4. If ML unreachable or `windows < MIN_WINDOWS (3)`, treat risk as `0.6` for `elevated`/`critical` (forces step-up), `0` otherwise.
 5. If user's `BiometricProfile.status !== "active"`, require step-up for `critical`, allow others.
 6. Compare risk to thresholds; on `deny` call Better Auth to revoke the session.
@@ -315,7 +315,7 @@ Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, 
 
 Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`, any subset, e.g. `{"critical":{"stepUp":0.3}}`) for tuning during the demo; restart `web` to apply.
 
-On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login?reason=risk`. Re-learning an active profile (`POST /api/enroll/start`, the DevOverlay's "re-learn") is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
+On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login`: plain, with no message, after a risk deny; `?reason=stepup_failed` after 3 wrong codes. Re-learning an active profile (`POST /api/enroll/start`, the DevOverlay's "re-learn") is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
 
 ## 8. ML service (services/ml)
 
@@ -325,6 +325,7 @@ On the client, gated requests go through `trustedFetch()` (`composables/useStepU
 |---|---|---|
 | POST | `/ingest` | `{userId, sessionId, batch}`; buffer, window, score |
 | GET | `/risk/{sessionId}` | `{risk, windows, lastUpdated, components, bot}` |
+| POST | `/risk/{sessionId}/close` `{userId}` | same; scores the open window first (gated actions) |
 | POST | `/enroll/{userId}/start` | start (or restart) enrollment with an empty buffer |
 | POST | `/enroll/{userId}/finish` | train model, return `{windowCount, ok}` |
 | POST | `/feedback` | `{userId, sessionId, label}`; on `genuine`, add recent windows and retrain in background |

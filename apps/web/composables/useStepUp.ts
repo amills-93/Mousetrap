@@ -42,9 +42,19 @@ export function signedOut(reason?: string) {
   window.location.assign(`/login${q}`); // full reload: drop all client state of the revoked session
 }
 
+// Set by the collector plugin: sends buffered telemetry so a gated request is judged on the typing that led
+// to it, not on what was sent up to 3 s earlier. Capped so a slow telemetry call never blocks the action.
+let flushTelemetry: (() => Promise<void>) | null = null;
+export const setTelemetryFlush = (fn: () => Promise<void>) => (flushTelemetry = fn);
+const FLUSH_WAIT_MS = 1000;
+
+const flushFirst = () =>
+  flushTelemetry ? Promise.race([flushTelemetry(), new Promise((r) => setTimeout(r, FLUSH_WAIT_MS))]) : undefined;
+
 export async function trustedFetch<T = unknown>(url: string, opts: FetchOptions = {}): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
+      await flushFirst();
       return (await rawFetch(url, opts)) as T;
     } catch (e) {
       const { action, tier, reason } = actionOf(e);

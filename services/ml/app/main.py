@@ -6,7 +6,8 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
 from . import buffer, enrollment, features, model, scoring
 from .schemas import (
-    EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse, UserStatus,
+    CloseRequest, EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse,
+    UserStatus,
 )
 
 log = logging.getLogger("uvicorn.error")
@@ -127,6 +128,23 @@ def user_status(user_id: str) -> UserStatus:
 @app.get("/risk/{session_id}", response_model=RiskResponse, dependencies=internal)
 def risk(session_id: str) -> RiskResponse:
     """Current session risk. windows=0 means nothing scored yet (or no model); Nuxt policy treats that as unknown."""
+    return _risk_response(session_id)
+
+
+@app.post("/risk/{session_id}/close", response_model=RiskResponse, dependencies=internal)
+def risk_close(session_id: str, req: CloseRequest) -> RiskResponse:
+    """Score the session's open window, then return its risk. Nuxt calls this when a gated action is attempted, so
+    the action is judged on the input that led up to it rather than waiting for the window to fill."""
+    user_id = valid_user(req.userId)
+    windows = buffer.drain(user_id, session_id)
+    if windows and not enrollment.is_enrolling(user_id):
+        rows = [features.extract(w) for w in windows]
+        scoring.update(user_id, session_id, windows, rows, 0)
+        enrollment.log_features(user_id, session_id, "live", rows)
+    return _risk_response(session_id)
+
+
+def _risk_response(session_id: str) -> RiskResponse:
     st = scoring.get(session_id)
     if st is None:
         return RiskResponse(risk=0.0, windows=0, lastUpdated=None, components={})

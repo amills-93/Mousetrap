@@ -58,6 +58,10 @@ export interface MlRisk {
 export const mlRisk = (sessionId: string) =>
   ml<MlRisk>(`/risk/${encodeURIComponent(sessionId)}`, { timeout: 300 });
 
+// Same, after ML scores the session's open window. Used when a gated action is attempted.
+export const mlRiskClose = (userId: string, sessionId: string) =>
+  ml<MlRisk>(`/risk/${encodeURIComponent(sessionId)}/close`, { method: "POST", body: { userId }, timeout: 300 });
+
 // After a successful step-up only (principle 5): ML adds the session's recent windows and retrains.
 export const mlFeedback = (body: { userId: string; sessionId: string; label: "genuine" }) =>
   ml<{ ok: boolean; windows: number }>("/feedback", { method: "POST", body });

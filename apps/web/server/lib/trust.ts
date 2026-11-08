@@ -2,17 +2,18 @@
 // decision as a RiskEvent, revokes the session on deny, and tracks step-up state in SessionTrust.
 import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
-import { mlFeedback, mlRisk, type MlRisk } from "./ml";
-import { decide, type Decision, type Tier, type TrustInput } from "./policy";
+import { mlFeedback, mlRisk, mlRiskClose, type MlRisk } from "./ml";
+import { MIN_WINDOWS, decide, type Decision, type Tier, type TrustInput } from "./policy";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
 
-export const STEP_UP_TTL_MS = 5 * 60 * 1000;
+export const STEP_UP_TTL_MS = 60 * 1000; // short on purpose: long enough to retry the action, not to browse on
 export const MAX_STEP_UP_FAILURES = 3;
 
-export async function loadTrust(userId: string, sessionId: string): Promise<{ input: TrustInput; ml: MlRisk | null }> {
+// closeWindow: have ML score the open window first (gated actions only; the overlay's polling must not).
+export async function loadTrust(userId: string, sessionId: string, closeWindow = false): Promise<{ input: TrustInput; ml: MlRisk | null }> {
   const [ml, profile, trust] = await Promise.all([
-    mlRisk(sessionId).catch(() => null),
+    (closeWindow ? mlRiskClose(userId, sessionId) : mlRisk(sessionId)).catch(() => null),
     prisma.biometricProfile.findUnique({ where: { userId } }),
     prisma.sessionTrust.findUnique({ where: { sessionId } }),
   ]);
@@ -41,21 +42,21 @@ export async function revokeSession(sessionId: string) {
   await prisma.sessionTrust.deleteMany({ where: { sessionId } });
 }
 
-// reason is a code; /login maps it to text (never echo free text from the URL).
-const logout = (reason: "risk" | "stepup_failed", message: string) =>
+// reason is a code; /login maps it to text (never echo free text from the URL). No reason: /login shows nothing.
+const logout = (reason?: "stepup_failed", message = "Unauthorized") =>
   createError({ statusCode: 401, statusMessage: message, data: { action: "logout", reason } });
 
 // Gate a sensitive route. Returns the session on allow; throws 403 {action:"step_up"} or 401 {action:"logout"}.
 export async function requireTrust(event: H3Event, tier: Tier) {
   const auth = await requireSession(event);
   const { user, session } = auth;
-  const { input } = await loadTrust(user.id, session.id);
+  const { input } = await loadTrust(user.id, session.id, true);
   const decision = decide(input, tier);
   await logRiskEvent({ userId: user.id, sessionId: session.id, type: decision, tier, risk: input.risk, route: event.path });
 
   if (decision === "deny") {
     await revokeSession(session.id);
-    throw logout("risk", "Signed out: this session no longer looks like the account owner.");
+    throw logout(); // silent on purpose: an impostor learns nothing about why they were signed out
   }
   if (decision === "step_up") {
     throw createError({
@@ -67,7 +68,9 @@ export async function requireTrust(event: H3Event, tier: Tier) {
   return auth;
 }
 
-// Record a step-up attempt. Success opens the 5 min window and tells ML the recent windows are genuine.
+// Record a step-up attempt. Success opens the 60 s window and, when ML had already scored the session, tells it
+// the recent windows are genuine. A step-up forced by missing telemetry (e.g. a SIM swap right after sign-in) is
+// passed with the same TOTP used to sign in, so its windows prove nothing and could be an attacker's.
 export async function recordStepUp(userId: string, sessionId: string, ok: boolean) {
   if (ok) {
     const stepUpUntil = new Date(Date.now() + STEP_UP_TTL_MS);
@@ -77,7 +80,10 @@ export async function recordStepUp(userId: string, sessionId: string, ok: boolea
       update: { stepUpUntil, failedStepUp: 0 },
     });
     await logRiskEvent({ userId, sessionId, type: "stepup_ok" });
-    mlFeedback({ userId, sessionId, label: "genuine" }).catch((err) => console.error("[trust] ML feedback failed:", err.message));
+    const ml = await mlRisk(sessionId).catch(() => null);
+    if (ml && ml.windows >= MIN_WINDOWS) {
+      mlFeedback({ userId, sessionId, label: "genuine" }).catch((err) => console.error("[trust] ML feedback failed:", err.message));
+    }
     return { stepUpUntil, attemptsLeft: MAX_STEP_UP_FAILURES };
   }
   const trust = await prisma.sessionTrust.upsert({
