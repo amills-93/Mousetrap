@@ -11,6 +11,13 @@ const busy = ref(false);
 
 const { data: session } = await useAuthSession();
 
+// Set by signedOut() when the server revoked the session (deny, or too many failed step-ups).
+const SIGNED_OUT: Record<string, string> = {
+  risk: "You were signed out because this session no longer looked like the account owner.",
+  stepup_failed: "You were signed out after too many incorrect verification codes.",
+};
+const signedOutReason = computed(() => SIGNED_OUT[String(route.query.reason)] ?? "");
+
 // Only allow same-site relative redirects.
 const redirectTo = computed(() => {
   const r = route.query.redirect;
@@ -44,6 +51,7 @@ async function submitTotp() {
   <main class="min-h-screen bg-gray-50 flex items-center justify-center p-6">
     <div class="bg-white rounded-xl shadow p-8 max-w-sm w-full">
       <h1 class="text-2xl font-semibold text-nimbus">Nimbus Mobile</h1>
+      <p v-if="signedOutReason" class="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{{ signedOutReason }}</p>
       <p v-if="session && step === 'password'" class="text-sm text-gray-500 mt-1">
         Signed in as {{ session.user.email }}. Sign in below to add another account.
         <NuxtLink to="/" class="text-nimbus underline">Back to portal</NuxtLink>

@@ -21,11 +21,11 @@ let pinTimer: ReturnType<typeof setTimeout> | undefined;
 async function revealPin() {
   pinErr.value = "";
   try {
-    pin.value = (await $fetch("/api/account/security/port-pin", { method: "POST" })).portPin;
+    pin.value = (await trustedFetch<{ portPin: string }>("/api/account/security/port-pin", { method: "POST" })).portPin;
     clearTimeout(pinTimer);
     pinTimer = setTimeout(() => (pin.value = null), 30_000);
   } catch (e: any) {
-    pinErr.value = e?.data?.statusMessage || "Could not reveal PIN";
+    pinErr.value = e instanceof StepUpCancelled ? "Verification cancelled." : e?.data?.statusMessage || "Could not reveal PIN";
   }
 }
 onBeforeUnmount(() => clearTimeout(pinTimer));
