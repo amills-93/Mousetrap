@@ -103,9 +103,9 @@ Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry origina
 ### 5.3 Step-up success
 
 - `/api/stepup/verify` checks the code with Better Auth's own `verifyTOTP` against the active session (same authenticator entry as sign-in; with a session it creates no new session and applies no lockout). The `otplib` / `StepUpFactor` fallback is unused.
-- Mark session `stepUpUntil = now + 5 min` (stored in `SessionTrust` table, keyed by Better Auth session id).
+- Mark session `stepUpUntil = now + 60 s` (stored in `SessionTrust` table, keyed by Better Auth session id).
 - Call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
-- Within the `stepUpUntil` window, `requireTrust` returns `allow` for tiers up to `critical`.
+- Within the `stepUpUntil` window, `requireTrust` skips step-up for every tier, but a risk at or above a tier's `deny` threshold still revokes the session.
 
 ### 5.4 Step-up failure
 
@@ -305,7 +305,7 @@ const THRESHOLDS: Record<Tier, { stepUp: number; deny: number }> = {
 `requireTrust(event, tier)`:
 
 1. Resolve session; if none, 401.
-2. If `SessionTrust.stepUpUntil > now`, allow.
+2. If `SessionTrust.stepUpUntil > now`, allow unless risk reaches the tier's `deny` threshold (checked in step 6).
 3. Fetch `/risk/{sessionId}` from ML (timeout 300 ms).
 4. If ML unreachable or `windows < MIN_WINDOWS (3)`, treat risk as `0.6` for `elevated`/`critical` (forces step-up), `0` otherwise.
 5. If user's `BiometricProfile.status !== "active"`, require step-up for `critical`, allow others.
