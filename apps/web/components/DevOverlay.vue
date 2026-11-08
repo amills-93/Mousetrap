@@ -16,6 +16,7 @@ interface RiskView {
   mlAvailable: boolean;
   profileActive: boolean;
   stepUpActive: boolean;
+  enrollment: { windows: number; target: number; keyWindows: number; keyTarget: number } | null;
 }
 
 const { $collector: collector, $collectorDebug: debug } = useNuxtApp();
@@ -57,6 +58,7 @@ const meter = computed(() => {
   const status = critical === "allow" ? "SIM swap allowed" : critical === "step_up" ? "SIM swap would require step-up" : "SIM swap would sign you out";
   let reason = "";
   if (r.stepUpActive) reason = "recently verified";
+  else if (r.enrollment) reason = "learning profile";
   else if (!r.profileActive) reason = "not enrolled";
   else if (!r.mlAvailable) reason = "ML unavailable";
   else if (r.criticalRisk !== r.risk) reason = `warming up: judged as ${r.criticalRisk.toFixed(2)}`;
@@ -70,6 +72,8 @@ const meter = computed(() => {
     windows: r.windows,
     components: Object.entries(r.components) as [string, number][],
     bot: r.bot,
+    enrollment: r.enrollment,
+    profileActive: r.profileActive,
     tiers: tiers.map((t) => ({ tier: t, ...r.thresholds[t], decision: r.decisions[t] })),
   };
 });
@@ -144,6 +148,18 @@ function describe(e: CollectorEvent): string {
   }
 }
 
+// Demo tooling: throw the profile away and learn it again from normal use (step-up required, principle 5).
+const relearnMsg = ref("");
+async function relearn() {
+  relearnMsg.value = "";
+  try {
+    await trustedFetch("/api/enroll/start", { method: "POST" });
+    pollRisk();
+  } catch (e: any) {
+    relearnMsg.value = e?.data?.statusMessage || "re-learn failed";
+  }
+}
+
 const statusClass = (s?: number) =>
   s === undefined ? "text-gray-400" : s >= 200 && s < 300 ? "text-emerald-400" : "text-red-400";
 </script>
@@ -198,6 +214,14 @@ const statusClass = (s?: number) =>
             {{ meter.windows }} windows
             <span v-for="[m, v] in meter.components" :key="m"> · {{ m }} {{ v.toFixed(2) }}</span>
             <span v-if="meter.bot" class="text-red-400"> · bot +{{ meter.bot.toFixed(1) }}</span>
+          </p>
+          <p v-if="meter.enrollment" class="mt-0.5 text-cyan-300">
+            learning · {{ meter.enrollment.windows }}/{{ meter.enrollment.target }} windows ·
+            typing {{ meter.enrollment.keyWindows }}/{{ meter.enrollment.keyTarget }}
+          </p>
+          <p v-else-if="meter.profileActive" class="mt-0.5 text-gray-500">
+            profile active · <button class="underline hover:text-white" @click="relearn">re-learn</button>
+            <span v-if="relearnMsg" class="text-red-400"> · {{ relearnMsg }}</span>
           </p>
         </template>
         <p v-else-if="riskError" class="text-red-400">risk unavailable</p>

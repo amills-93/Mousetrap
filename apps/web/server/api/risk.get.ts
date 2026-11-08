@@ -1,12 +1,16 @@
 // Current session's risk plus the server's decision for every tier (ARCHITECTURE.md 7.3). The DevOverlay only
 // displays this; it never compares risk to thresholds itself (principle 1).
 import { decideAll, effectiveRisk, thresholds } from "../lib/policy";
+import { mlUserStatus } from "../lib/ml";
 import { requireSession } from "../lib/session";
 import { loadTrust } from "../lib/trust";
 
 export default defineEventHandler(async (event) => {
   const { user, session } = await requireSession(event);
-  const { input, ml } = await loadTrust(user.id, session.id);
+  const [{ input, ml }, status] = await Promise.all([
+    loadTrust(user.id, session.id),
+    mlUserStatus(user.id).catch(() => null),
+  ]);
   const t = thresholds();
   return {
     risk: ml?.risk ?? null,
@@ -21,5 +25,9 @@ export default defineEventHandler(async (event) => {
     mlAvailable: ml !== null,
     profileActive: input.profileActive,
     stepUpActive: input.stepUpActive,
+    // Passive enrollment progress (lib/enroll.ts), shown only in the demo overlay.
+    enrollment: status?.enrolling
+      ? { windows: status.enrollWindows, target: status.enrollTarget, keyWindows: status.enrollKeyWindows, keyTarget: status.enrollKeyTarget }
+      : null,
   };
 });

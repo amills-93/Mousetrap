@@ -12,12 +12,25 @@ function ml<T>(path: string, opts: { method?: "GET" | "POST"; body?: unknown; ti
 }
 
 export const mlIngest = (body: { userId: string; sessionId: string; batch: TelemetryBatch }) =>
-  ml<{ ok: boolean; buffered: number; risk?: number | null; scoredWindows?: number | null }>("/ingest", { method: "POST", body });
+  ml<MlIngest>("/ingest", { method: "POST", body });
+
+export interface MlIngest {
+  ok: boolean;
+  buffered: number;
+  risk?: number | null;
+  scoredWindows?: number | null;
+  enrolled: boolean; // the user has a trained model
+  enrolling: boolean; // windows go to the enrollment buffer instead of scoring
+  enrollReady: boolean; // enough enrollment windows to train
+}
 
 export interface MlUserStatus {
   enrolled: boolean;
   enrolling: boolean;
   enrollWindows: number; // windows collected in the current enrollment
+  enrollKeyWindows: number; // of those, windows with typing
+  enrollTarget: number; // enrollWindows needed before training
+  enrollKeyTarget: number; // enrollKeyWindows needed before training
   windowCount: number; // windows the current model was trained on
   modelVersion: number;
 }
@@ -28,7 +41,7 @@ export const mlEnrollStart = (userId: string) =>
 export const mlEnrollFinish = (userId: string) =>
   ml<{ ok: boolean; windowCount: number; modelVersion?: number | null; error?: string | null }>(
     `/enroll/${encodeURIComponent(userId)}/finish`,
-    { method: "POST" },
+    { method: "POST", timeout: 15000 }, // trains the model
   );
 
 export const mlUserStatus = (userId: string) => ml<MlUserStatus>(`/users/${encodeURIComponent(userId)}/status`);

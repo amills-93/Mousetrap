@@ -4,6 +4,7 @@ import { requireSession } from "../lib/session";
 import { TelemetryBatch, acceptSeq, allowRequest } from "../lib/telemetry";
 import { mlIngest } from "../lib/ml";
 import { logRiskEvent } from "../lib/trust";
+import { passiveEnroll } from "../lib/enroll";
 
 // One "score" RiskEvent per session every SCORE_EVERY_MS feeds the /admin/risk timeline.
 const SCORE_EVERY_MS = 5000;
@@ -40,7 +41,9 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const { buffered, risk } = await mlIngest({ userId: user.id, sessionId: session.id, batch });
+    const res = await mlIngest({ userId: user.id, sessionId: session.id, batch });
+    const { buffered, risk } = res;
+    void passiveEnroll(user.id, res);
     const now = Date.now();
     if (risk != null && now - (lastScore.get(session.id) ?? 0) >= SCORE_EVERY_MS) {
       if (lastScore.size > 5000) lastScore.clear();

@@ -277,7 +277,6 @@ All seeded data is fictional: 555 phone numbers, fake account numbers, fake ICCI
 | `/security` | change password, port-out PIN reveal, signed-in devices | `critical` |
 | `/security/sim` | SIM swap / eSIM transfer to new device | `critical` |
 | `/security/authorized-users` | add authorized user | `critical` |
-| `/enroll` | biometric enrollment flow | n/a |
 | `/admin/risk` | demo-only live view of all sessions and scores | demo flag |
 
 UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2D7C` primary, cyan `#22C3E6` accent, neutral grays).
@@ -316,7 +315,7 @@ Steps 2–5 and the threshold comparison live in a pure `decide({risk, windows, 
 
 Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`, any subset, e.g. `{"critical":{"stepUp":0.3}}`) for tuning during the demo; restart `web` to apply.
 
-On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login`: plain, with no message, after a risk deny; `?reason=stepup_failed` after 3 wrong codes. Re-enrolling an active profile is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
+On the client, gated requests go through `trustedFetch()` (`composables/useStepUp.ts`): a 403 `step_up` opens the `StepUpModal`, and a verified code retries the request once; a 401 `logout` reloads to `/login`: plain, with no message, after a risk deny; `?reason=stepup_failed` after 3 wrong codes. Re-learning an active profile (`POST /api/enroll/start`, the DevOverlay's "re-learn") is gated at `critical` (principle 5). `/api/telemetry` writes a `score` RiskEvent at most every 5 s per session for the `/admin/risk` timeline.
 
 ## 8. ML service (services/ml)
 
@@ -327,13 +326,19 @@ On the client, gated requests go through `trustedFetch()` (`composables/useStepU
 | POST | `/ingest` | `{userId, sessionId, batch}`; buffer, window, score |
 | GET | `/risk/{sessionId}` | `{risk, windows, lastUpdated, components, bot}` |
 | POST | `/risk/{sessionId}/close` `{userId}` | same; scores the open window first (gated actions) |
-| POST | `/enroll/{userId}/start` | reset enrollment buffer |
+| POST | `/enroll/{userId}/start` | start (or restart) enrollment with an empty buffer |
 | POST | `/enroll/{userId}/finish` | train model, return `{windowCount, ok}` |
 | POST | `/feedback` | `{userId, sessionId, label}`; on `genuine`, add recent windows and retrain in background |
-| GET | `/users/{userId}/status` | enrolled?, window count, model version |
+| GET | `/users/{userId}/status` | enrolled?, enrolling?, enrollment progress and targets, window count, model version |
 | GET | `/healthz` | liveness |
 
-During enrollment (`/enroll` page), `/ingest` routes that user's windows to the enrollment buffer instead of scoring.
+Enrollment is passive: there is no enrollment page, and the user is never told it is happening.
+
+- While a user is enrolling, `/ingest` routes their windows from normal portal use to the enrollment buffer instead of scoring. Windows completed by a batch with `synthetic > 0` are logged as `bot` and never enrolled.
+- `/ingest` returns `enrolled`, `enrolling`, and `enrollReady`. Ready means 40 windows, at least 8 of them with typing (keys decide, 8.4); a user who never types stays enrolling.
+- Nuxt (`server/lib/enroll.ts`, called after every telemetry batch, fire-and-forget): no model, not enrolling, and no active profile → `/enroll/{id}/start` and set the profile to `enrolling`. `enrollReady` → `/enroll/{id}/finish` and set the profile `active`. An active profile is never replaced passively (principle 5).
+- Enrollment can span sessions, so it survives an ML restart: `models/{userId}/enrolling.json` records when it started, and the buffer is rebuilt from the `enroll` rows in `features.parquet` since then.
+- Until the profile is active, policy treats the user as not enrolled (7.4: critical actions step up, others allow). Whoever uses the account first defines the template, so enrollment only ever runs inside a session that passed sign-in, including TOTP for 2FA accounts.
 
 ### 8.2 Windowing
 
@@ -392,7 +397,7 @@ Log every feature vector to `models/{userId}/features.parquet` for debugging and
 - CSRF: Better Auth defaults; telemetry endpoint accepts only same-origin `fetch` with JSON content type plus `sendBeacon` (text/plain JSON) from same origin.
 - Rate limit `/api/telemetry` per session (e.g. 5 req/s).
 - No real personal data. Seed users and data are fictional.
-- Show a consent banner on `/enroll` explaining what is collected (timing and motion only) and that it is a demo.
+- `/login` carries a one-line notice that the portal looks at typing and motion timing (never what is typed) and that it is a demo. Enrollment itself is not surfaced.
 
 ## 10. Environment variables
 
