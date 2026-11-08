@@ -45,14 +45,23 @@ if [[ -z "$APP_ID" ]]; then
   APP_ID=$(az ad app create --display-name "$APP_NAME" --query appId -o tsv)
 fi
 az ad sp show --id "$APP_ID" -o none 2>/dev/null || az ad sp create --id "$APP_ID" -o none
-if ! az ad app federated-credential list --id "$APP_ID" --query "[?name=='github-$GH_ENV']" -o tsv | grep -q .; then
-  az ad app federated-credential create --id "$APP_ID" --parameters "{
-    \"name\": \"github-$GH_ENV\",
-    \"issuer\": \"https://token.actions.githubusercontent.com\",
-    \"subject\": \"repo:$REPO:environment:$GH_ENV\",
-    \"audiences\": [\"api://AzureADTokenExchange\"]
-  }" -o none
-fi
+# GitHub sends either the plain subject or, for newer repos, one qualified with the owner and repo IDs
+# (repo:owner@ownerId/name@repoId:...). Register both so either works.
+OWNER_ID=$(gh api "repos/$REPO" -q .owner.id)
+REPO_ID=$(gh api "repos/$REPO" -q .id)
+ID_REPO="${REPO%%/*}@$OWNER_ID/${REPO#*/}@$REPO_ID"
+for pair in "github-$GH_ENV|$REPO" "github-$GH_ENV-ids|$ID_REPO"; do
+  name=${pair%%|*}
+  subject="repo:${pair#*|}:environment:$GH_ENV"
+  if ! az ad app federated-credential list --id "$APP_ID" --query "[?subject=='$subject']" -o tsv | grep -q .; then
+    az ad app federated-credential create --id "$APP_ID" --parameters "{
+      \"name\": \"$name\",
+      \"issuer\": \"https://token.actions.githubusercontent.com\",
+      \"subject\": \"$subject\",
+      \"audiences\": [\"api://AzureADTokenExchange\"]
+    }" -o none
+  fi
+done
 RG_ID=$(az group show -n "$RG" --query id -o tsv)
 az role assignment create --assignee "$APP_ID" --role "Virtual Machine Contributor" --scope "$RG_ID" -o none 2>/dev/null || true
 
