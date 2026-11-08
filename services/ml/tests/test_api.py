@@ -146,3 +146,37 @@ def test_close_scores_the_open_window(client):
     assert r.json()["windows"] == 1
     # Another user's id cannot drain or score this session.
     assert client.post("/risk/s1/close", headers=H, json={"userId": "u2"}).json()["windows"] == 1
+
+
+def _enrolled(client, user="u1"):
+    client.post(f"/enroll/{user}/start", headers=H)
+    _, t = feed(client, user, f"{user}-enroll", 10)
+    assert client.post(f"/enroll/{user}/finish", headers=H).json()["ok"]
+    return t
+
+
+def test_challenge_collects_keys_after_start(client):
+    t = _enrolled(client)
+    page = str(uuid.uuid4())
+    k, t = typing(t, n=40)  # before the challenge: must not count
+    client.post("/ingest", headers=H, json={"userId": "u1", "sessionId": "s1", "batch": batch(page, 1, k)})
+    assert client.post("/challenge/s1/start", headers=H, json={"userId": "u1"}).json()["keysModeled"] is True
+
+    r = client.post("/challenge/s1/result", headers=H, json={"userId": "u1"}).json()
+    assert (r["started"], r["windows"], r["risk"]) == (True, 0, None)
+
+    k, t = typing(t + 1000, n=20)
+    client.post("/ingest", headers=H, json={"userId": "u1", "sessionId": "s1", "batch": batch(page, 2, k)})
+    r = client.post("/challenge/s1/result", headers=H, json={"userId": "u1"}).json()
+    assert r["windows"] >= 1 and 0.0 <= r["risk"] <= 1.0
+
+
+def test_challenge_result_without_start_starts_one(client):
+    _enrolled(client)
+    r = client.post("/challenge/s9/result", headers=H, json={"userId": "u1"}).json()
+    assert (r["keysModeled"], r["started"], r["windows"]) == (True, False, 0)
+    assert client.post("/challenge/s9/result", headers=H, json={"userId": "u1"}).json()["started"] is True
+
+
+def test_challenge_without_keys_model(client):
+    assert client.post("/challenge/s1/start", headers=H, json={"userId": "nokeys"}).json()["keysModeled"] is False

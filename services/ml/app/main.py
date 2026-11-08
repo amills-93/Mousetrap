@@ -6,7 +6,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
 from . import buffer, enrollment, features, model, scoring
 from .schemas import (
-    CloseRequest, EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse,
+    ChallengeResponse, CloseRequest, EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse,
     UserStatus,
 )
 
@@ -128,12 +128,48 @@ def risk_close(session_id: str, req: CloseRequest) -> RiskResponse:
     """Score the session's open window, then return its risk. Nuxt calls this when a gated action is attempted, so
     the action is judged on the input that led up to it rather than waiting for the window to fill."""
     user_id = valid_user(req.userId)
+    _close_window(user_id, session_id)
+    return _risk_response(session_id)
+
+
+def _close_window(user_id: str, session_id: str) -> None:
     windows = buffer.drain(user_id, session_id)
     if windows and not enrollment.is_enrolling(user_id):
         rows = [features.extract(w) for w in windows]
         scoring.update(user_id, session_id, windows, rows, 0)
         enrollment.log_features(user_id, session_id, "live", rows)
-    return _risk_response(session_id)
+
+
+def _keys_modeled(user_id: str) -> bool:
+    return "keys" in ((model.meta(user_id) or {}).get("modalities") or {})
+
+
+@app.post("/challenge/{session_id}/start", response_model=ChallengeResponse, dependencies=internal)
+def challenge_start(session_id: str, req: CloseRequest) -> ChallengeResponse:
+    """Step-up opened: earlier input is scored as usual, then keystroke windows from here on are collected."""
+    user_id = valid_user(req.userId)
+    modeled = _keys_modeled(user_id)
+    if modeled:
+        _close_window(user_id, session_id)
+        scoring.start_challenge(user_id, session_id)
+    return ChallengeResponse(keysModeled=modeled, started=False, windows=0, risk=None)
+
+
+@app.post("/challenge/{session_id}/result", response_model=ChallengeResponse, dependencies=internal)
+def challenge_result(session_id: str, req: CloseRequest) -> ChallengeResponse:
+    """Step-up submitted: score the open window, then report the challenge. Starts one if none is running, so
+    calling verify without a prior step-up prompt cannot skip the typing."""
+    user_id = valid_user(req.userId)
+    if not _keys_modeled(user_id):
+        return ChallengeResponse(keysModeled=False, started=False, windows=0, risk=None)
+    _close_window(user_id, session_id)
+    risks = scoring.challenge(session_id, user_id)
+    if risks is None:
+        scoring.start_challenge(user_id, session_id)
+        return ChallengeResponse(keysModeled=True, started=False, windows=0, risk=None)
+    mean = round(sum(risks) / len(risks), 4) if risks else None
+    log.info("challenge user=%s session=%s… windows=%d risk=%s", user_id, session_id[:8], len(risks), mean)
+    return ChallengeResponse(keysModeled=True, started=True, windows=len(risks), risk=mean)
 
 
 def _risk_response(session_id: str) -> RiskResponse:
