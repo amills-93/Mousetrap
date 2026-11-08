@@ -220,3 +220,13 @@ def test_challenge_result_without_start_starts_one(client):
 
 def test_challenge_without_keys_model(client):
     assert client.post("/challenge/s1/start", headers=H, json={"userId": "nokeys"}).json()["keysModeled"] is False
+
+
+def test_demo_reset_clears_session_state(client):
+    feed(client, "u1", "s1", 3)
+    assert buffer.get("s1") is not None
+    r = client.post("/demo/reset", headers=H)
+    assert r.status_code == 200
+    assert buffer.get("s1") is None and scoring.get("s1") is None
+    assert client.get("/risk/s1", headers=H).json()["windows"] == 0
+    assert client.post("/demo/reset").status_code == 401

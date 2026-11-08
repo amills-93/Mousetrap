@@ -221,6 +221,21 @@ def _retrain(user_id: str, rows: list[dict[str, float]]) -> None:
         log.exception("feedback retrain failed user=%s", user_id)
 
 
+@app.post("/demo/reset", dependencies=internal)
+def demo_reset() -> dict:
+    """Between demo runs: forget every session's buffered input, risk EWMA, challenge and coaching counts. Trained
+    models and enrollment buffers are kept. Nuxt only calls this in DEMO_MODE."""
+    sessions = len(scoring._state) + len(coaching._state)
+    with buffer._lock:
+        buffer._sessions.clear()
+    with scoring._lock:
+        scoring._state.clear()
+    with coaching._lock:
+        coaching._state.clear()
+    log.info("demo reset: cleared %d session states", sessions)
+    return {"ok": True}
+
+
 @app.post("/feedback", response_model=FeedbackResponse, dependencies=internal)
 def feedback(req: FeedbackRequest, tasks: BackgroundTasks) -> FeedbackResponse:
     """Called by Nuxt only after a successful step-up: the session's recent windows are the real user."""
