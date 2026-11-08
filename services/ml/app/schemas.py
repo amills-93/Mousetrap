@@ -126,6 +126,13 @@ class RiskResponse(BaseModel):
     bot: float = 0.0  # bot-heuristic penalty on the last window
 
 
+class ChallengeResponse(BaseModel):
+    keysModeled: bool  # the user has a keystroke model; False means the challenge cannot judge anything
+    started: bool  # a challenge was already running (False: this call just started one)
+    windows: int  # keystroke windows scored since it started
+    risk: float | None  # mean keys risk of those windows (bot penalty included); None when windows == 0
+
+
 class FeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     userId: Annotated[str, Field(min_length=1)]

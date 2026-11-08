@@ -2,8 +2,8 @@
 // decision as a RiskEvent, revokes the session on deny, and tracks step-up state in SessionTrust.
 import { randomUUID } from "node:crypto";
 import type { H3Event } from "h3";
-import { mlFeedback, mlRisk, mlRiskClose, type MlRisk } from "./ml";
-import { MIN_WINDOWS, decide, type Decision, type Tier, type TrustInput } from "./policy";
+import { mlChallengeResult, mlChallengeStart, mlFeedback, mlRisk, mlRiskClose, type MlRisk } from "./ml";
+import { MIN_WINDOWS, TYPING_ENFORCE, decide, judgeTyping, type Decision, type Tier, type TrustInput } from "./policy";
 import { prisma } from "./prisma";
 import { requireSession } from "./session";
 
@@ -28,7 +28,7 @@ export async function loadTrust(userId: string, sessionId: string, closeWindow =
   };
 }
 
-type EventType = Decision | "score" | "stepup_ok" | "stepup_failed";
+type EventType = Decision | "score" | "stepup_ok" | "stepup_failed" | "typing_ok" | "typing_failed";
 
 export function logRiskEvent(e: { userId: string; sessionId: string; type: EventType; tier?: Tier; risk?: number | null; route?: string }) {
   return prisma.riskEvent
@@ -59,6 +59,8 @@ export async function requireTrust(event: H3Event, tier: Tier) {
     throw logout(); // silent on purpose: an impostor learns nothing about why they were signed out
   }
   if (decision === "step_up") {
+    // Collect the phrase typing from here on; a failure only means the prompt judges by TOTP alone.
+    await mlChallengeStart(user.id, session.id).catch((err) => console.error("[trust] challenge start failed:", err.message));
     throw createError({
       statusCode: 403,
       statusMessage: "Verification required",
@@ -68,10 +70,28 @@ export async function requireTrust(event: H3Event, tier: Tier) {
   return auth;
 }
 
+// Judge the step-up phrase typing before the code (ARCHITECTURE.md 5.3b) and log the result. With TYPING_ENFORCE,
+// foreign typing revokes the session silently, like a deny, and a pass lets the step-up teach ML.
+export async function checkStepUpTyping(userId: string, sessionId: string): Promise<boolean> {
+  const result = await mlChallengeResult(userId, sessionId).catch(() => null);
+  const verdict = judgeTyping(result);
+  if (verdict === "retry") {
+    throw createError({ statusCode: 400, statusMessage: "Type the phrase shown above, then enter your code.", data: { action: "type_phrase" } });
+  }
+  if (verdict === "skip") return false;
+  await logRiskEvent({ userId, sessionId, type: verdict === "pass" ? "typing_ok" : "typing_failed", risk: result?.risk ?? null });
+  if (!TYPING_ENFORCE) return false;
+  if (verdict === "fail") {
+    await revokeSession(sessionId);
+    throw logout();
+  }
+  return true;
+}
+
 // Record a step-up attempt. Success opens the 60 s window and, when ML had already scored the session, tells it
 // the recent windows are genuine. A step-up forced by missing telemetry (e.g. a SIM swap right after sign-in) is
 // passed with the same TOTP used to sign in, so its windows prove nothing and could be an attacker's.
-export async function recordStepUp(userId: string, sessionId: string, ok: boolean) {
+export async function recordStepUp(userId: string, sessionId: string, ok: boolean, typingPassed = false) {
   if (ok) {
     const stepUpUntil = new Date(Date.now() + STEP_UP_TTL_MS);
     await prisma.sessionTrust.upsert({
@@ -81,7 +101,7 @@ export async function recordStepUp(userId: string, sessionId: string, ok: boolea
     });
     await logRiskEvent({ userId, sessionId, type: "stepup_ok" });
     const ml = await mlRisk(sessionId).catch(() => null);
-    if (ml && ml.windows >= MIN_WINDOWS) {
+    if (typingPassed || (ml && ml.windows >= MIN_WINDOWS)) {
       mlFeedback({ userId, sessionId, label: "genuine" }).catch((err) => console.error("[trust] ML feedback failed:", err.message));
     }
     return { stepUpUntil, attemptsLeft: MAX_STEP_UP_FAILURES };

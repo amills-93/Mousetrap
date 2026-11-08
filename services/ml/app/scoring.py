@@ -44,6 +44,8 @@ class SessionRisk:
     recent: deque = field(default_factory=lambda: deque(maxlen=RECENT_WINDOWS))  # feature rows, bot-free
     pending_synthetic: bool = False  # synthetic events in a batch that completed no window yet
     last_seen: float = field(default_factory=time.monotonic)
+    # Step-up typing challenge: keys risk (+ bot penalty) of each window since it started; None when not running.
+    challenge: list[float] | None = None
 
 
 _state: dict[str, SessionRisk] = {}
@@ -90,6 +92,8 @@ def update(user_id: str, session_id: str, windows: list[Window], rows: list[dict
             if mod_risks is None:
                 return None
             bot = bot_penalty(window, feats, flagged)
+            if st.challenge is not None and "keys" in mod_risks:
+                st.challenge.append(min(1.0, mod_risks["keys"] + bot))
             risk = combine(mod_risks)
             if risk is None and not bot:
                 continue
@@ -110,6 +114,22 @@ def get(session_id: str) -> SessionRisk | None:
     if st is not None and time.monotonic() - st.last_seen > IDLE_TTL_S:
         return None
     return st
+
+
+def start_challenge(user_id: str, session_id: str) -> None:
+    """Begin collecting keystroke risk for a step-up typing challenge (restarts one already running)."""
+    with _lock:
+        st = _state.get(session_id)
+        if st is None or st.user_id != user_id:
+            st = _state[session_id] = SessionRisk(user_id=user_id)
+        st.last_seen = time.monotonic()
+        st.challenge = []
+
+
+def challenge(session_id: str, user_id: str) -> list[float] | None:
+    with _lock:
+        st = _state.get(session_id)
+        return None if st is None or st.user_id != user_id or st.challenge is None else list(st.challenge)
 
 
 def take_recent(session_id: str, user_id: str) -> list[dict[str, float]]:

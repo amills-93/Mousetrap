@@ -1,7 +1,7 @@
 // Run: pnpm --filter web test
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decide, decideAll, thresholds, type TrustInput } from "./policy";
+import { decide, decideAll, judgeTyping, thresholds, type TrustInput } from "./policy";
 
 const base: TrustInput = { risk: 0.1, windows: 10, profileActive: true, stepUpActive: false };
 
@@ -48,4 +48,14 @@ test("POLICY_THRESHOLDS_JSON overrides a subset; bad JSON keeps defaults", () =>
   assert.equal(t.elevated.deny, 0.9);
   assert.equal(decide({ ...base, risk: 0.25 }, "critical", t), "step_up");
   assert.deepEqual(thresholds("{nope"), thresholds(""));
+});
+
+test("step-up typing: skip without a keys model or ML, retry until typed, fail on foreign typing", () => {
+  const r = { keysModeled: true, started: true, windows: 2, risk: 0.2 };
+  assert.equal(judgeTyping(null), "skip");
+  assert.equal(judgeTyping({ ...r, keysModeled: false }), "skip");
+  assert.equal(judgeTyping({ ...r, started: false, windows: 0, risk: null }), "retry");
+  assert.equal(judgeTyping({ ...r, windows: 0, risk: null }), "retry");
+  assert.equal(judgeTyping(r), "pass");
+  assert.equal(judgeTyping({ ...r, risk: 0.5 }), "fail");
 });

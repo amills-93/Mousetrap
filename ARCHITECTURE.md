@@ -107,6 +107,17 @@ Browser: on step_up show StepUpModal -> POST /api/stepup/verify -> retry origina
 - If ML had scored at least `MIN_WINDOWS` (3) windows of the session, call `{ML_URL}/feedback` with `{userId, sessionId, label: "genuine"}`. A step-up forced only by missing telemetry sends no feedback: it is passed with the same TOTP used to sign in, so it says nothing about whose windows those are. ML appends the session's last 20 bot-free windows to the user's training set (`training.parquet`, capped at 300 windows), retrains in the background, and resets that session's score to 0. Feedback never creates a template for a user who has not enrolled.
 - Within the `stepUpUntil` window, `requireTrust` skips step-up for every tier, but a risk at or above a tier's `deny` threshold still revokes the session.
 
+### 5.3b Step-up typing challenge
+
+A TOTP code alone proves little right after sign-in: the attacker just used the same code to sign in. So the prompt also asks the user to type a short phrase (paste is blocked), and its keystroke timing is judged against the owner's keys model.
+
+- When `requireTrust` returns `step_up`, Nuxt calls ML `POST /challenge/{sessionId}/start {userId}`. ML scores the open window as usual, then records the keys risk (plus bot penalty) of every later window that has typing.
+- `StepUpModal` awaits a collector flush before posting the code. `/api/stepup/verify` first calls `POST /challenge/{sessionId}/result`, which closes the open window and returns `{keysModeled, started, windows, risk}` (`risk` is the mean over the challenge windows). It starts a challenge if none is running, so calling verify without a prompt cannot skip the typing.
+- `judgeTyping()` in `policy.ts` (pure, unit-tested): no ML or no keys model → `skip` (TOTP alone, as before); no typed windows yet → `retry` (400 `{action:"type_phrase"}`, not counted as a failed attempt); mean risk ≥ `TYPING_MAX_RISK` (0.5) → `fail`; otherwise `pass`.
+- Every judged result is logged as `RiskEvent(type: "typing_ok" | "typing_failed", risk)` for `/admin/risk`.
+- **Log-only for now (`TYPING_ENFORCE = false`).** On the Stage 5 data the free-text keys model, applied per phrase (two windows), fails the owner's own live typing 43–60% of the time at 0.5 (12–19% at 0.8) and fails the second person less often on one model, so it cannot decide this. The prompt still requires typed input, and the results are logged so a phrase-specific model can be calibrated later. With enforcement on, `fail` revokes the session silently, like a deny, before the code is checked, and `pass` allows ML feedback even when the session had fewer than `MIN_WINDOWS` scored windows.
+- The phrase text never leaves the browser; only keystroke timing does, through the normal collector (principle 3).
+
 ### 5.4 Step-up failure
 
 - Each wrong code writes `RiskEvent(type: "stepup_failed")` and increments `SessionTrust.failedStepUp`; the 3rd revokes the session and returns 401 `{action:"logout"}`, and the client redirects to `/login?reason=stepup_failed` (`/login` maps reason codes to fixed text).
