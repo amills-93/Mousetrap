@@ -57,10 +57,11 @@ export function effectiveRisk(input: TrustInput, tier: Tier): number {
 
 // 7.4 steps 2-5 plus the threshold comparison, with no side effects.
 export function decide(input: TrustInput, tier: Tier, t: Thresholds = thresholds()): Decision {
-  if (input.stepUpActive) return "allow";
-  if (!input.profileActive) return tier === "critical" ? "step_up" : "allow";
+  if (!input.profileActive) return input.stepUpActive || tier !== "critical" ? "allow" : "step_up";
   const risk = effectiveRisk(input, tier);
+  // Deny wins even inside the step-up window: a fresh code does not excuse behavior that keeps looking foreign.
   if (risk >= t[tier].deny) return "deny";
+  if (input.stepUpActive) return "allow";
   if (risk >= t[tier].stepUp) return "step_up";
   return "allow";
 }
