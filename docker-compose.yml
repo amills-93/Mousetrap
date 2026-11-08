@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mousetrap
+      POSTGRES_PASSWORD: mousetrap
+      POSTGRES_DB: mousetrap
+    ports:
+      - "127.0.0.1:5432:5432" # host-side prisma/dev only; never reachable from outside the machine
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mousetrap"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  ml:
+    build: ./services/ml
+    env_file: .env
+    expose:
+      - "8000" # internal only
+    volumes:
+      - mlmodels:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    env_file: .env
+    environment:
+      # Nuxt runtimeConfig is only overridden at runtime by NUXT_* vars.
+      NUXT_ML_URL: ${ML_URL}
+      NUXT_ML_INTERNAL_KEY: ${ML_INTERNAL_KEY}
+      NUXT_PUBLIC_DEMO_MODE: ${DEMO_MODE}
+    ports:
+      - "127.0.0.1:3000:3000" # direct access for local dev; on the demo host traffic comes through caddy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml:
+        condition: service_healthy
+
+  # Demo host only: docker compose --profile deploy up -d   (needs DOMAIN in .env; see deploy/deploy.sh)
+  caddy:
+    image: caddy:2.8-alpine
+    profiles: ["deploy"]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  # One-off: docker compose run --rm seed  (applies migrations, then seeds demo users and prints TOTP QR codes)
+  seed:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: build
+    env_file: .env
+    profiles: ["tools"]
+    command: sh -c "pnpm --filter web exec prisma migrate deploy && pnpm --filter web db:seed"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  mlmodels:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,33 @@
+{
+  "name": "web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare && prisma generate",
+    "prisma": "prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "tsx --test server/lib/*.test.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@mousetrap-auth/collector": "workspace:*",
+    "@prisma/client": "6.19.3",
+    "better-auth": "1.7.18",
+    "nuxt": "3.21.11",
+    "vue": "3.5.45",
+    "vue-router": "4.6.4",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@nuxtjs/tailwindcss": "6.14.0",
+    "prisma": "6.19.3",
+    "qrcode-terminal": "0.12.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

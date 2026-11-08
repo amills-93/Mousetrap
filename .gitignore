@@ -1,0 +1,13 @@
+node_modules/
+.env
+.nuxt/
+.output/
+.data/
+dist/
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+services/ml/models/*
+!services/ml/models/.gitkeep
