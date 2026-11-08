@@ -286,7 +286,7 @@ UI: Nuxt + Tailwind, original Nimbus brand (suggested palette: deep indigo `#2B2
 1. **Risk meter** (Stage 6): polls `GET /api/risk` every 2 s while signed in. Shows the session risk as a 0–1 bar with a marker per tier at its `stepUp` and `deny` thresholds (7.4), a status label, the window count, and the per-modality components (`keys`, `mouse`, `touch`). Bar color is green below the lowest `stepUp` threshold, amber up to the lowest `deny` threshold, and red above it. When collapsed, the pill's dot takes the same color.
 2. **Telemetry** (Stage 4): collector running/stopped and pending count, totals per modality plus `synthetic`, a feed of the latest events (key class and `code_hash` only), a trail of recent mouse/touch positions, and the latest batches (transport, bytes, HTTP status, latency, events buffered at ML).
 
-The meter only displays; it never decides (principle 1). `/api/risk` returns `{risk, windows, lastUpdated, components, thresholds, decisions}`, where `decisions` maps each tier to `allow | step_up | deny` as computed server-side by the same pure function `requireTrust` uses (7.4, steps 2–5, without side effects). The status label is the `critical` decision, e.g. "SIM swap would require step-up". The overlay draws the threshold markers from the `thresholds` the server returns, so `POLICY_THRESHOLDS_JSON` overrides show up live.
+The meter only displays; it never decides (principle 1). `/api/risk` returns `{risk, windows, lastUpdated, components, bot, thresholds, decisions, criticalRisk, mlAvailable, profileActive, stepUpActive}`, where `decisions` maps each tier to `allow | step_up | deny` as computed server-side by the same pure function `requireTrust` uses (7.4, steps 2–5, without side effects). The status label is the `critical` decision, e.g. "SIM swap would require step-up". The overlay draws the threshold markers from the `thresholds` the server returns, so `POLICY_THRESHOLDS_JSON` overrides show up live.
 
 ### 7.4 Policy (`server/lib/policy.ts`)
 
@@ -322,7 +322,7 @@ Thresholds are env-overridable (`POLICY_THRESHOLDS_JSON`) for live tuning during
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/ingest` | `{userId, sessionId, batch}`; buffer, window, score |
-| GET | `/risk/{sessionId}` | `{risk, windows, lastUpdated, components}` |
+| GET | `/risk/{sessionId}` | `{risk, windows, lastUpdated, components, bot}` |
 | POST | `/enroll/{userId}/start` | reset enrollment buffer |
 | POST | `/enroll/{userId}/finish` | train model, return `{windowCount, ok}` |
 | POST | `/feedback` | `{userId, sessionId, label}`; on `genuine`, add recent windows and retrain in background |
@@ -368,16 +368,19 @@ Log every feature vector to `models/{userId}/features.parquet` for debugging and
 
 ### 8.4 Model
 
-- Per-user `StandardScaler` + `IsolationForest(n_estimators=200, contamination="auto", random_state=42)` trained on enrollment windows (minimum 20 windows; target 40+).
-- **Calibration:** at train time, compute decision scores on the training windows; store their empirical distribution. Map a new window's score to risk via its percentile (lower IF score = more anomalous): `risk = 1 - percentile_of_score_in_training_distribution`, clipped to [0, 1].
-- Persist with joblib at `models/{userId}/model.joblib` plus `meta.json` (version, window count, feature list).
+- Per-user, per-modality `StandardScaler` + `IsolationForest(n_estimators=200, contamination="auto", random_state=42)`: one each for keys, mouse, and touch, trained only on the enrollment windows where that modality is present (minimum 20 windows overall, 8 per modality; target 40+). A modality below 8 windows is not scored for that user.
+- Mouse uses shape and click features only (straightness, angle mean/std, pause mean, click hold mean/std). Speed, acceleration, and scroll depend on the task (click-target game vs. browsing) more than on the person; on the Stage 5 data they flagged the owner's own browsing.
+- **Calibration:** at train time, store the sorted decision scores of the training windows. A new window's percentile `pct` in that distribution maps to `risk = clip((0.25 - pct) / 0.25, 0, 1)`: windows more typical than the user's 25th-percentile training window score 0, rising to 1 at the least typical. (Plain `1 - pct` makes genuine windows uniform on 0..1, mean 0.5, above the critical step-up threshold.)
+- Persist with joblib at `models/{userId}/model.joblib` plus `meta.json` (version, format, window count, windows per modality). `scripts/retrain.py` rebuilds every model from the logged enrollment windows after a format change.
 - Stretch: replace with a global embedding model (small 1D-CNN or GRU over event sequences, triplet loss) and score by cosine distance to a per-user template. Keep the same `/risk` contract so Nuxt does not change.
 
 ### 8.5 Session risk
 
-- `risk_t = alpha * window_risk + (1 - alpha) * risk_{t-1}`, `alpha = 0.3`.
-- Track in memory: `{sessionId: {risk, windows, lastUpdated, components:{keys, mouse}}}`. Expire after 30 min idle.
-- Bot heuristics add to risk: `synthetic > 0` in batch (+0.3), mouse paths with near-zero curvature variance (+0.2), inter-key intervals with std < 5 ms over 20+ keys (+0.3).
+- Window risk combines the modality risks present in the window: `sum(w_m * r_m) / max(1, sum(w_m))` with `w = {keys: 1.0, touch: 0.7, mouse: 0.4}`. Weights below 1 act as a zero prior, so a mouse-only window contributes at most 0.4 and any window with typing is judged mainly on keystrokes.
+- `risk_t = alpha * window_risk + (1 - alpha) * risk_{t-1}`, `alpha = 0.3`; the first scored window sets the score.
+- Track in memory: `{sessionId: {risk, windows, lastUpdated, components:{keys, mouse, touch}, bot}}`, where each component is its own EWMA. Expire after 30 min idle. `GET /risk/{sessionId}` returns these (`windows: 0` for an unknown session).
+- Bot heuristics add to a window's risk: `synthetic > 0` in the batch that completed it (+0.3), mouse path angle-change std < 0.01 rad (+0.2), keydown interval std < 5 ms over 20+ keys (+0.3).
+- `scripts/replay.py <modelUser> <dataUser>` replays logged windows through a model and the EWMA to check where a session would settle.
 
 ## 9. Security notes (demo scope)
 

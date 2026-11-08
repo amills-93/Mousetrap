@@ -3,7 +3,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from app import buffer, enrollment, main, model
+from app import buffer, enrollment, main, model, scoring
 from tests.helpers import batch, mouse, typing
 
 H = {"X-Internal-Key": "test-key"}
@@ -16,6 +16,7 @@ def isolated(tmp_path, monkeypatch):
     enrollment._enrolling.clear()
     enrollment._logs.clear()
     model._cache.clear()
+    scoring._state.clear()
     yield
 
 
@@ -125,5 +126,5 @@ def test_reenroll_bumps_version_and_scores(client):
     import pandas as pd
     rows = pd.read_parquet(model.MODELS_DIR / "u1" / "features.parquet").to_dict("records")
     risks = [model.window_risk("u1", r) for r in rows]
-    assert all(0 <= r <= 1 for r in risks)
+    assert all(0 <= v <= 1 for r in risks for v in r.values())
     assert model.window_risk("nobody", rows[0]) is None

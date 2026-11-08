@@ -8,7 +8,8 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare && prisma generate",
     "prisma": "prisma",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "tsx --test server/lib/*.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
