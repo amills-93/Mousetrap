@@ -358,11 +358,23 @@ Many carrier scams end with the real owner making the change: a caller posing as
   | 2+ spaced digit groups | 0.25 |
   | long pause | 0.15 |
   | session < 5 min old with ≤ 2 route changes ("straight here after signing in") | 0.2 |
+  | a scam text that ends in an account action, received in the last 24 h (7.6) | 0.3 |
 
   The score is capped at 1.
 - **Decision.** `decide()` returns `pause` for `critical` when the score is 0.5 or more. Deny still wins. Pause applies with or without a profile and even inside a step-up window, because the coached owner can pass step-up.
 - **Hold.** `requireTrust` creates a `ScamHold` (`pending`) and returns 403 `{action:"pause", holdId, holdMs}`. `ScamPauseModal` explains the scam, says Nimbus never asks for this, and offers two answers: "someone asked me to" (`cancelled`, logged `pause_reported`) or "I'm doing this myself" (`held` until `now + PAUSE_HOLD_MS`, 24 h by default, logged `pause_held`). The action is not performed either way. Once the hold has passed, that route skips the pause once (`used`).
 - **What the customer is told.** The modal names no signals, since a scammer on the call would learn what to avoid. The reasons go only to the demo overlay and `/admin/risk`.
+
+### 7.6 Screened messages (Scam Shield)
+
+- `Message` rows hold the customer's texts with the verdict ML gave on arrival: `verdict`, `scamProbability`, `category`, `advice`, `accountRisk`, `redFlags`, and the customer's own `customerVerdict` (`reported` / `not_scam`).
+- `GET /api/messages` fills a synthetic demo inbox on a user's first visit (`lib/messages.ts`; no reseed needed). The inbox includes the demo story's fake "Nimbus Security" text.
+- `POST /api/messages/:id {action}` records the customer's feedback.
+- `POST /api/messages/simulate` (DEMO_MODE) delivers a typed text so judges can try their own wording.
+- `/messages` shows each verdict in words ("Scam very likely", "Be careful"), with the category, advice, and red flags. It also gives the percentage and says the filter can be wrong.
+- If ML is down, a message is delivered marked "not checked", never shown as "ok".
+- **Feeding the scam pause.** A recent `accountRisk` scam (fake carrier support, code theft, transfer-PIN request, SIM deactivation, bank alert) raises the coaching score, unless the customer marked it "not a scam". That ties the text to the account action it is setting up.
+- **Privacy.** Every message is synthetic. In a real deployment classification would run on the phone, and only the verdict and category, never the text, would reach the carrier. `/classify` scores a text and keeps nothing.
 
 ## 8. ML service (services/ml)
 
@@ -373,6 +385,8 @@ Many carrier scams end with the real owner making the change: a caller posing as
 | POST | `/ingest` | `{userId, sessionId, batch}`; buffer, window, score |
 | GET | `/risk/{sessionId}` | `{risk, windows, lastUpdated, components, bot}` |
 | POST | `/risk/{sessionId}/close` `{userId}` | same; scores the open window first (gated actions) |
+| POST | `/classify` `{text}` | scam verdict: `{verdict, scamProbability, category, categoryLabel, advice, accountRisk, redFlags}` (8.7) |
+| GET | `/classifier/metrics` | held-out evaluation from training |
 | POST | `/enroll/{userId}/start` | start (or restart) enrollment with an empty buffer |
 | POST | `/enroll/{userId}/finish` | train model, return `{windowCount, ok}` |
 | POST | `/feedback` | `{userId, sessionId, label}`; on `genuine`, add recent windows and retrain in background |
@@ -437,6 +451,29 @@ Log every feature vector to `models/{userId}/features.parquet` for debugging and
 - Track in memory: `{sessionId: {risk, windows, lastUpdated, components:{keys, mouse, touch}, bot}}`, where each component is its own EWMA. Expire after 30 min idle. `GET /risk/{sessionId}` returns these (`windows: 0` for an unknown session).
 - Bot heuristics add to a window's risk: `synthetic > 0` in the batch that completed it (+0.3), mouse path angle-change std < 0.01 rad (+0.2), keydown interval std < 5 ms over 20+ keys (+0.3).
 - `scripts/replay.py <modelUser> <dataUser>` replays logged windows through a model and the EWMA to check where a session would settle.
+
+### 8.7 Scam classifier
+
+- **Data** (`data/`):
+  - `taxonomy.json` holds 13 scam categories, each with red flags, customer advice, and whether it ends in an account action. It also lists 7 kinds of legitimate message.
+  - `messages.jsonl` holds 3,568 synthetic texts (1,456 scam) from `scripts/generate_messages.py`: fixed templates filled with fictional names, 555-01xx numbers, and `.example`/`.test` links, deterministic seed.
+  - It includes hard negatives on purpose: real carrier notices that mention PINs, real verification codes, real delivery links.
+- **Held-out wording.** Every fourth template of each category is held out, so evaluation measures wording the model never saw, not memorized templates.
+- **Model** (`app/classifier.py`):
+  - Scam vs not: logistic regression over TF-IDF word 1–2-grams, character 3–5-grams (lookalike domains, odd spellings), and one feature per red flag.
+  - A second model picks the category for scams.
+  - The red flags are rules that skip negated requests ("we will never ask for your PIN"). They explain verdicts to customers and are the rules-only baseline.
+  - Verdict: `scam` at p ≥ 0.5, `suspicious` at 0.25 or more, otherwise `ok`.
+  - Trained at image build by `scripts/train_classifier.py`, which writes `metrics.json`. A copy is kept in `data/classifier_metrics.json`.
+- **Results on held-out templates** (892 rows):
+
+  | | F1 | Precision | Recall | False positive rate |
+  |---|---|---|---|---|
+  | Model | 0.956 | 0.997 | 0.918 | 0.2% |
+  | Rules-only baseline | 0.417 | | | |
+
+  The model's ROC AUC is 0.996 and its category accuracy is 0.72. A random split scores 0.997, which shows how much seen templates inflate the number. The held-out figure is the one to quote.
+- **Limits.** Every message comes from our own templates, so real-world accuracy is unknown. The most-missed kinds are short, link-free openers (family emergency, wrong number). I looked at held-out errors twice while building this: once to add more varied legitimate messages and red-flag features, once to fix negated PIN warnings. So the held-out number is slightly optimistic.
 
 ## 9. Security notes (demo scope)
 
@@ -512,5 +549,5 @@ LLM_API_KEY=
 3. Switch back to Alex's session; a teammate takes the keyboard and mouse; meter climbs.
 4. Teammate opens SIM swap: step-up TOTP modal appears.
 5. Teammate keeps pushing / fails TOTP: session revoked, back to login.
-6. Coached owner: Alex, on the phone with a "Nimbus support" scammer, is told to move the line to a new SIM. Alex switches to the scam text and back, then types the ICCID as it is read out in groups. SIM swap shows the scam pause, and Alex taps "someone asked me to".
+6. Coached owner: Alex opens Messages. Scam Shield has flagged a fake "Nimbus Security" text about a SIM change, which says an agent will call and to have the transfer PIN ready. The "agent" (a teammate) calls and talks Alex through moving the line to a new SIM. Alex switches tabs and back, then types the ICCID as it is read out in groups. SIM swap shows the scam pause (recent scam text + tab switch + spaced digits), and Alex taps "someone asked me to". A judge can also type their own text into the demo "receive a text" box.
 7. Show the `/admin/risk` timeline (decisions, the pause and the report, coaching score with reasons) and the vanilla-adapter page to prove the front end is swappable.
