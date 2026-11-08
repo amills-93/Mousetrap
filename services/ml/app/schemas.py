@@ -88,6 +88,8 @@ class IngestResponse(BaseModel):
     buffered: int  # raw events held for this session
     windows: int  # windows completed by this batch
     enrollWindows: int | None = None  # enrollment progress, when the user is enrolling
+    risk: float | None = None  # session risk after this batch, when live-scored
+    scoredWindows: int | None = None
 
 
 class EnrollFinishResponse(BaseModel):
@@ -111,3 +113,15 @@ class RiskResponse(BaseModel):
     lastUpdated: float | None  # unix seconds of the last scored window
     components: dict[str, float]  # per-modality EWMA: keys, mouse, touch (only those seen)
     bot: float = 0.0  # bot-heuristic penalty on the last window
+
+
+class FeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    userId: Annotated[str, Field(min_length=1)]
+    sessionId: Annotated[str, Field(min_length=1)]
+    label: Literal["genuine"]
+
+
+class FeedbackResponse(BaseModel):
+    ok: bool
+    windows: int  # windows queued for retraining

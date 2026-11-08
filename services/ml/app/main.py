@@ -2,10 +2,12 @@ import logging
 import os
 from collections import Counter
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
 from . import buffer, enrollment, features, model, scoring
-from .schemas import EnrollFinishResponse, IngestRequest, IngestResponse, RiskResponse, UserStatus
+from .schemas import (
+    EnrollFinishResponse, FeedbackRequest, FeedbackResponse, IngestRequest, IngestResponse, RiskResponse, UserStatus,
+)
 
 log = logging.getLogger("uvicorn.error")
 
@@ -66,7 +68,10 @@ def ingest(req: IngestRequest) -> IngestResponse:
         f" enroll={enroll_windows}" if enroll_windows is not None else
         (f" risk={st.risk:.2f} scored={st.windows}" if st else ""),
     )
-    return IngestResponse(ok=True, buffered=len(buf.events), windows=len(rows), enrollWindows=enroll_windows)
+    return IngestResponse(
+        ok=True, buffered=len(buf.events), windows=len(rows), enrollWindows=enroll_windows,
+        risk=round(st.risk, 4) if st and st.windows else None, scoredWindows=st.windows if st else None,
+    )
 
 
 @app.post("/enroll/{user_id}/start", dependencies=internal)
@@ -126,4 +131,22 @@ def risk(session_id: str) -> RiskResponse:
     )
 
 
-# Stage 7: /feedback, declared with dependencies=internal.
+def _retrain(user_id: str, rows: list[dict[str, float]]) -> None:
+    try:
+        info = model.retrain_with(user_id, rows)
+        if info:
+            log.info("feedback retrain user=%s version=%d windows=%d", user_id, info["version"], info["windowCount"])
+    except Exception:  # background task: log, never crash the worker
+        log.exception("feedback retrain failed user=%s", user_id)
+
+
+@app.post("/feedback", response_model=FeedbackResponse, dependencies=internal)
+def feedback(req: FeedbackRequest, tasks: BackgroundTasks) -> FeedbackResponse:
+    """Called by Nuxt only after a successful step-up: the session's recent windows are the real user."""
+    user_id = valid_user(req.userId)
+    rows = scoring.take_recent(req.sessionId, user_id)
+    if rows:
+        enrollment.log_features(user_id, req.sessionId, "feedback", rows)
+        tasks.add_task(_retrain, user_id, rows)
+    log.info("feedback user=%s session=%s… label=%s windows=%d", user_id, req.sessionId[:8], req.label, len(rows))
+    return FeedbackResponse(ok=True, windows=len(rows))

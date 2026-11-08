@@ -61,7 +61,7 @@ def test_full_enrollment(client, tmp_path):
     assert r["ok"] and r["modelVersion"] == 1
     st = client.get("/users/u1/status", headers=H).json()
     assert st == {"enrolled": True, "enrolling": False, "enrollWindows": 0, "windowCount": r["windowCount"], "modelVersion": 1}
-    assert {p.name for p in (tmp_path / "u1").iterdir()} == {"model.joblib", "meta.json", "features.parquet"}
+    assert {p.name for p in (tmp_path / "u1").iterdir()} == {"model.joblib", "meta.json", "features.parquet", "training.parquet"}
 
 
 def test_finish_too_early_keeps_enrolling(client):

@@ -143,3 +143,43 @@ def test_stage5_model_is_ignored_until_retrained(client):
     meta.write_text(meta.read_text().replace('"format": 2', '"format": 1'))
     model._cache.clear()
     assert model.window_risk("u1", {"has_keys": 1.0}) is None
+
+
+def test_feedback_resets_session_and_retrains(client):
+    enroll(client)
+    r = live(client, "thief", 6, typer=impostor_typing, mover=impostor_mouse)
+    assert r["risk"] > 0.35
+    fb = client.post("/feedback", headers=H, json={"userId": "u1", "sessionId": "thief", "label": "genuine"}).json()
+    assert fb["ok"] and fb["windows"] > 0
+    after = client.get("/risk/thief", headers=H).json()
+    assert after["risk"] == 0.0 and after["windows"] == r["windows"]
+    assert model.meta("u1")["version"] == 2  # TestClient runs background tasks before returning
+    assert model.meta("u1")["windowCount"] > 20
+
+
+def test_feedback_never_creates_a_template(client):
+    live(client, "s1", 4, user="u9")
+    fb = client.post("/feedback", headers=H, json={"userId": "u9", "sessionId": "s1", "label": "genuine"}).json()
+    assert fb["windows"] == 0 and model.meta("u9") is None
+
+
+def test_feedback_other_users_session_is_ignored(client):
+    enroll(client)
+    live(client, "s1", 4)
+    fb = client.post("/feedback", headers=H, json={"userId": "u2", "sessionId": "s1", "label": "genuine"}).json()
+    assert fb["windows"] == 0
+
+
+def test_feedback_only_accepts_genuine(client):
+    r = client.post("/feedback", headers=H, json={"userId": "u1", "sessionId": "s1", "label": "impostor"})
+    assert r.status_code == 422
+
+
+def test_ingest_reports_live_risk(client):
+    enroll(client)
+    page, t, body = str(uuid.uuid4()), 0.0, None
+    for seq in range(1, 5):
+        k, t = typing(t)
+        m, t = mouse(t)
+        body = client.post("/ingest", headers=H, json={"userId": "u1", "sessionId": "s", "batch": batch(page, seq, k + m)}).json()
+    assert body["scoredWindows"] > 0 and 0 <= body["risk"] <= 1

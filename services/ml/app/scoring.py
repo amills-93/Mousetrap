@@ -9,6 +9,7 @@ browsing (the owner's own browsing scored ~0.4 on mouse alone), so mouse is weak
 
 import math
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from threading import Lock
 
@@ -19,6 +20,7 @@ from .features import Window
 
 ALPHA = 0.3
 IDLE_TTL_S = 30 * 60
+RECENT_WINDOWS = 20  # kept per session for /feedback
 
 # Keystroke timing separates people best on the Stage 5 data; mouse shape barely does.
 WEIGHTS = {"keys": 1.0, "touch": 0.7, "mouse": 0.4}
@@ -39,6 +41,7 @@ class SessionRisk:
     last_updated: float | None = None  # unix seconds
     components: dict[str, float] = field(default_factory=dict)  # per-modality EWMA
     bot: float = 0.0  # last window's bot penalty
+    recent: deque = field(default_factory=lambda: deque(maxlen=RECENT_WINDOWS))  # feature rows, bot-free
     pending_synthetic: bool = False  # synthetic events in a batch that completed no window yet
     last_seen: float = field(default_factory=time.monotonic)
 
@@ -95,6 +98,8 @@ def update(user_id: str, session_id: str, windows: list[Window], rows: list[dict
             for m, r in mod_risks.items():
                 st.components[m] = _ewma(st.components.get(m), r, ALPHA)
             st.bot = bot
+            if not bot:
+                st.recent.append(feats)
             st.windows += 1
             st.last_updated = time.time()
         return st
@@ -105,3 +110,18 @@ def get(session_id: str) -> SessionRisk | None:
     if st is not None and time.monotonic() - st.last_seen > IDLE_TTL_S:
         return None
     return st
+
+
+def take_recent(session_id: str, user_id: str) -> list[dict[str, float]]:
+    """Recent windows of a session after a successful step-up; resets its score, since the user just proved
+    who they are. The windows stay counted, so policy keeps judging the session normally afterwards."""
+    with _lock:
+        st = _state.get(session_id)
+        if st is None or st.user_id != user_id:
+            return []
+        rows = list(st.recent)
+        st.recent.clear()
+        st.risk = 0.0
+        st.components = {m: 0.0 for m in st.components}
+        st.bot = 0.0
+        return rows
