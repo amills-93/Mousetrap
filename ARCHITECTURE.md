@@ -83,7 +83,7 @@ Nuxt --POST {ML_URL}/ingest (X-Internal-Key)--> ML service
 ML: append events to session buffer -> build windows -> score -> update EWMA
 ```
 
-- Collector flushes every 3 s or 200 events, whichever first, plus `navigator.sendBeacon` on `pagehide`.
+- Collector flushes every 3 s or 200 events, whichever first, plus `navigator.sendBeacon` on `pagehide`. `trustedFetch()` also awaits `flush()` (capped at 1 s) before every gated request, so the typing on the form itself reaches ML first.
 - Each batch carries `seq` (monotonic per page load) and `pageId` (random UUID per load). Nuxt drops batches with non-increasing `seq` for a `pageId` (basic replay guard).
 - Nuxt rejects telemetry with no valid session (401). Unauthenticated pages (login) do not collect.
 
@@ -92,7 +92,7 @@ ML: append events to session buffer -> build windows -> score -> update EWMA
 ```
 Browser --POST /api/account/sim-swap--> Nuxt
 Nuxt: requireTrust(event, "critical")
-  -> GET {ML_URL}/risk/{sessionId}
+  -> POST {ML_URL}/risk/{sessionId}/close   (scores the open window, then returns risk)
   -> policy decision
      allow    -> perform action
      step_up  -> 403 {action:"step_up", challengeId}
@@ -155,7 +155,7 @@ interface TelemetryBatch {
 
 ```ts
 const c = createCollector({ endpoint: "/api/telemetry", flushMs: 3000, maxBatch: 200 });
-c.start(); c.stop(); c.flush(); c.setRoute(path);
+c.start(); c.stop(); await c.flush(); c.setRoute(path); // flush() settles when all in-flight batches have
 ```
 
 - Optional observability hooks `onEvent(e)` and `onBatch(info)` (seq, event count, counts per kind, bytes, transport, HTTP status, latency, response) see exactly what is sent and nothing more. The DevOverlay (7.3) uses them; production builds leave them unset.
@@ -306,7 +306,7 @@ const THRESHOLDS: Record<Tier, { stepUp: number; deny: number }> = {
 
 1. Resolve session; if none, 401.
 2. If `SessionTrust.stepUpUntil > now`, allow unless risk reaches the tier's `deny` threshold (checked in step 6).
-3. Fetch `/risk/{sessionId}` from ML (timeout 300 ms).
+3. Fetch `POST /risk/{sessionId}/close` from ML (timeout 300 ms): ML first scores the session's open window, so a fast attacker's last few seconds of input count. `/api/risk` uses the read-only `GET /risk/{sessionId}`.
 4. If ML unreachable or `windows < MIN_WINDOWS (3)`, treat risk as `0.6` for `elevated`/`critical` (forces step-up), `0` otherwise.
 5. If user's `BiometricProfile.status !== "active"`, require step-up for `critical`, allow others.
 6. Compare risk to thresholds; on `deny` call Better Auth to revoke the session.
@@ -326,6 +326,7 @@ On the client, gated requests go through `trustedFetch()` (`composables/useStepU
 |---|---|---|
 | POST | `/ingest` | `{userId, sessionId, batch}`; buffer, window, score |
 | GET | `/risk/{sessionId}` | `{risk, windows, lastUpdated, components, bot}` |
+| POST | `/risk/{sessionId}/close` `{userId}` | same; scores the open window first (gated actions) |
 | POST | `/enroll/{userId}/start` | reset enrollment buffer |
 | POST | `/enroll/{userId}/finish` | train model, return `{windowCount, ok}` |
 | POST | `/feedback` | `{userId, sessionId, label}`; on `genuine`, add recent windows and retrain in background |
