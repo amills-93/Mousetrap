@@ -11,7 +11,9 @@ COPY packages/collector/package.json packages/collector/
 COPY apps/web/prisma apps/web/prisma
 RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY . .
-RUN pnpm --filter web exec prisma generate && pnpm --filter web exec nuxt build
+RUN pnpm --filter @mousetrap-auth/collector build \
+ && pnpm --filter web exec prisma generate \
+ && pnpm --filter web exec nuxt build
 
 FROM base AS runtime
 RUN npm install -g prisma@6.19.3
